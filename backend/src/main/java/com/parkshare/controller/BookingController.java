@@ -42,4 +42,22 @@ public class BookingController {
     public ResponseEntity<ApiResponse<BookingResponse>> cancelBooking(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success("Booking cancelled successfully", bookingService.cancelBooking(id)));
     }
+
+    @PutMapping("/{id}/accept")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> acceptBooking(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Booking accepted", bookingService.acceptBooking(id)));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> rejectBooking(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Booking rejected", bookingService.rejectBooking(id)));
+    }
+
+    @GetMapping("/owner/stats")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<com.parkshare.dto.OwnerStatsResponse>> getOwnerStats() {
+        return ResponseEntity.ok(ApiResponse.success("Owner stats fetched", bookingService.getOwnerStats()));
+    }
 }

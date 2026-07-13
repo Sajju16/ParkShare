@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -24,6 +26,7 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final ParkingSpaceRepository parkingSpaceRepository;
     private final AuthService authService;
+    private final NotificationService notificationService;
 
     @Transactional
     public BookingResponse createBooking(BookingRequest request) {
@@ -60,7 +63,7 @@ public class BookingService {
         booking.setStartTime(request.getStartTime());
         booking.setEndTime(request.getEndTime());
         booking.setTotalPrice(totalPrice);
-        booking.setStatus(BookingStatus.CONFIRMED); // Setting as confirmed for simplicity (mocking payment)
+        booking.setStatus(BookingStatus.PENDING); // Status starts as PENDING until owner accepts
         
         booking = bookingRepository.save(booking);
         return mapToResponse(booking);
@@ -106,6 +109,82 @@ public class BookingService {
         booking.setStatus(BookingStatus.CANCELLED);
         booking = bookingRepository.save(booking);
         return mapToResponse(booking);
+    }
+
+    @Transactional
+    public BookingResponse acceptBooking(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+        User owner = authService.getCurrentUser();
+
+        if (!booking.getParkingSpace().getOwner().getId().equals(owner.getId())) {
+            throw new RuntimeException("Unauthorized to accept this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new RuntimeException("Can only accept PENDING bookings");
+        }
+
+        boolean hasOverlap = bookingRepository.existsOverlappingBooking(booking.getParkingSpace().getId(), booking.getStartTime(), booking.getEndTime());
+        if (hasOverlap) {
+            throw new RuntimeException("Cannot accept this booking because it overlaps with an existing confirmed booking.");
+        }
+
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking = bookingRepository.save(booking);
+
+        notificationService.sendNotification(
+            booking.getDriver().getEmail(),
+            "Booking Accepted",
+            "Your booking for " + booking.getParkingSpace().getTitle() + " has been accepted."
+        );
+
+        return mapToResponse(booking);
+    }
+
+    @Transactional
+    public BookingResponse rejectBooking(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId).orElseThrow(() -> new RuntimeException("Booking not found"));
+        User owner = authService.getCurrentUser();
+
+        if (!booking.getParkingSpace().getOwner().getId().equals(owner.getId())) {
+            throw new RuntimeException("Unauthorized to reject this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new RuntimeException("Can only reject PENDING bookings");
+        }
+
+        booking.setStatus(BookingStatus.REJECTED);
+        booking = bookingRepository.save(booking);
+
+        notificationService.sendNotification(
+            booking.getDriver().getEmail(),
+            "Booking Rejected",
+            "Your booking for " + booking.getParkingSpace().getTitle() + " has been rejected."
+        );
+
+        return mapToResponse(booking);
+    }
+
+    public com.parkshare.dto.OwnerStatsResponse getOwnerStats() {
+        User owner = authService.getCurrentUser();
+        LocalDateTime startOfDay = LocalDateTime.now().with(LocalTime.MIN);
+        LocalDateTime endOfDay = LocalDateTime.now().with(LocalTime.MAX);
+
+        List<Booking> activeToday = bookingRepository.findActiveBookingsForOwnerByDate(owner.getId(), startOfDay, endOfDay);
+        
+        Double todayRevenue = activeToday.stream()
+            .mapToDouble(Booking::getTotalPrice)
+            .sum();
+
+        List<Booking> allOwnerBookings = bookingRepository.findByParkingSpaceOwnerIdOrderByStartTimeDesc(owner.getId());
+        long pendingRequests = allOwnerBookings.stream().filter(b -> b.getStatus() == BookingStatus.PENDING).count();
+
+        return com.parkshare.dto.OwnerStatsResponse.builder()
+            .todayRevenueEstimate(todayRevenue)
+            .activeOccupancy(activeToday.size())
+            .pendingRequests((int) pendingRequests)
+            .build();
     }
 
     private BookingResponse mapToResponse(Booking booking) {

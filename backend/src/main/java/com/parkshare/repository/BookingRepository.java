@@ -23,4 +23,11 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByDriverIdOrderByStartTimeDesc(Long driverId);
 
     List<Booking> findByParkingSpaceOwnerIdOrderByStartTimeDesc(Long ownerId);
+
+    @Query("SELECT b FROM Booking b WHERE b.parkingSpace.owner.id = :ownerId " +
+           "AND b.status = 'CONFIRMED' " +
+           "AND b.startTime <= :endOfDay AND b.endTime >= :startOfDay")
+    List<Booking> findActiveBookingsForOwnerByDate(@Param("ownerId") Long ownerId, 
+                                                   @Param("startOfDay") LocalDateTime startOfDay, 
+                                                   @Param("endOfDay") LocalDateTime endOfDay);
 }
