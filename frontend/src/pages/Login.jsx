@@ -21,7 +21,9 @@ const Login = () => {
                 setError(res.message || 'Login failed');
             }
         } catch (err) {
-            setError(err.response?.data?.message || 'Login failed');
+            // err.response.data is our ApiResponse object, which has a 'message' field
+            const msg = err.response?.data?.message || err.message || 'Login failed. Please check your credentials.';
+            setError(msg);
         }
     };
 

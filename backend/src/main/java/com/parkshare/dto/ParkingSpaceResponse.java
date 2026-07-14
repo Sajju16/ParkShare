@@ -20,8 +20,8 @@ public class ParkingSpaceResponse {
     private Double pricePerHour;
     private Double pricePerDay;
     private VehicleType vehicleType;
-    private boolean isCovered;
-    private boolean hasEvCharging;
-    private boolean isAvailable;
+    private boolean covered;
+    private boolean evCharging;
+    private boolean available;
     private List<String> images;
 }

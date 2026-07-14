@@ -84,8 +84,8 @@ const ParkingSpaceDetails = () => {
                     <h2 className="text-2xl font-bold mb-4">Features</h2>
                     <ul className="grid grid-cols-2 gap-4 text-gray-700">
                         <li><span className="font-semibold">Vehicle Type:</span> {space.vehicleType}</li>
-                        <li><span className="font-semibold">Covered:</span> {space.isCovered ? "Yes" : "No"}</li>
-                        <li><span className="font-semibold">EV Charging:</span> {space.hasEvCharging ? "Yes" : "No"}</li>
+                        <li><span className="font-semibold">Covered:</span> {space.covered ? "Yes" : "No"}</li>
+                        <li><span className="font-semibold">EV Charging:</span> {space.evCharging ? "Yes" : "No"}</li>
                         <li><span className="font-semibold">Owner:</span> {space.ownerName}</li>
                     </ul>
                 </div>
@@ -135,7 +135,7 @@ const ParkingSpaceDetails = () => {
 
                             <button 
                                 type="submit" 
-                                disabled={totalPrice <= 0 || !space.isAvailable || user?.role === 'OWNER'}
+                                disabled={totalPrice <= 0 || !space.available || user?.role === 'OWNER'}
                                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Reserve Now'}

@@ -30,3 +30,7 @@ app:
     cloud-name: ${CLOUDINARY_CLOUD_NAME:dummy_cloud}
     api-key: ${CLOUDINARY_API_KEY:dummy_key}
     api-secret: ${CLOUDINARY_API_SECRET:dummy_secret}
+
+razorpay:
+  key-id: rzp_test_mockkeyid123
+  key-secret: mocksecretkey456789

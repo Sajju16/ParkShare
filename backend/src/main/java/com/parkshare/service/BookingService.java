@@ -129,13 +129,13 @@ public class BookingService {
             throw new RuntimeException("Cannot accept this booking because it overlaps with an existing confirmed booking.");
         }
 
-        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setStatus(BookingStatus.AWAITING_PAYMENT);
         booking = bookingRepository.save(booking);
 
         notificationService.sendNotification(
             booking.getDriver().getEmail(),
-            "Booking Accepted",
-            "Your booking for " + booking.getParkingSpace().getTitle() + " has been accepted."
+            "Booking Accepted - Payment Required",
+            "Your booking for " + booking.getParkingSpace().getTitle() + " has been accepted by the owner. Please complete the payment to confirm it."
         );
 
         return mapToResponse(booking);

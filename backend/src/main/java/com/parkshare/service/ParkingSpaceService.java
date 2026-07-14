@@ -105,9 +105,9 @@ public class ParkingSpaceService {
                 .pricePerHour(space.getPricePerHour())
                 .pricePerDay(space.getPricePerDay())
                 .vehicleType(space.getVehicleType())
-                .isCovered(space.isCovered())
-                .hasEvCharging(space.isHasEvCharging())
-                .isAvailable(space.isAvailable())
+                .covered(space.isCovered())
+                .evCharging(space.isHasEvCharging())
+                .available(space.isAvailable())
                 .images(space.getImages())
                 .build();
     }

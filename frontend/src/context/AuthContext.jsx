@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 export const AuthContext = createContext();
@@ -7,15 +7,38 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    // Bug Fix #3: Centralize the logout logic into one function used everywhere,
+    // including the API interceptor's custom event
+    const clearAuth = useCallback(() => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        // Do NOT set the axios header here — the request interceptor in api.js
+        // reads from localStorage on every request, so clearing localStorage is enough.
+        setUser(null);
+    }, []);
+
     useEffect(() => {
+        // Restore auth state from localStorage on mount
         const storedUser = localStorage.getItem('user');
         const token = localStorage.getItem('token');
         if (storedUser && token) {
-            setUser(JSON.parse(storedUser));
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            try {
+                setUser(JSON.parse(storedUser));
+            } catch {
+                // Corrupted localStorage — clear it
+                clearAuth();
+            }
         }
         setLoading(false);
-    }, []);
+
+        // Bug Fix #2 (frontend side): Listen for the 401 event dispatched by the api interceptor
+        // This ensures AuthContext state is cleared when the token expires mid-session
+        const handleForcedLogout = () => {
+            clearAuth();
+        };
+        window.addEventListener('auth:logout', handleForcedLogout);
+        return () => window.removeEventListener('auth:logout', handleForcedLogout);
+    }, [clearAuth]);
 
     const login = async (email, password) => {
         const response = await api.post('/auth/login', { email, password });
@@ -23,7 +46,6 @@ export const AuthProvider = ({ children }) => {
             const { token, ...userData } = response.data;
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(userData));
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             setUser(userData);
         }
         return response;
@@ -35,17 +57,14 @@ export const AuthProvider = ({ children }) => {
             const { token, ...data } = response.data;
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(data));
-            api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             setUser(data);
         }
         return response;
     };
 
+    // Bug Fix #3: Logout now atomically clears all auth state
     const logout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        delete api.defaults.headers.common['Authorization'];
-        setUser(null);
+        clearAuth();
     };
 
     return (

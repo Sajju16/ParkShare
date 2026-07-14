@@ -9,6 +9,7 @@ import DriverDashboard from './pages/DriverDashboard';
 import ParkingSpaceDetails from './pages/ParkingSpaceDetails';
 import DriverBookings from './pages/DriverBookings';
 import OwnerBookings from './pages/OwnerBookings';
+import EarningsDashboard from './pages/EarningsDashboard';
 
 const Navigation = () => {
     const { user, logout } = React.useContext(AuthContext);
@@ -33,8 +34,9 @@ const Navigation = () => {
                         <span className="font-medium text-gray-800">Hi, {user.name}</span>
                         {user.role === 'OWNER' && (
                             <>
-                                <Link to="/owner-dashboard" className="text-blue-600 hover:underline">Dashboard</Link>
-                                <Link to="/owner/bookings" className="text-blue-600 hover:underline">Reservations</Link>
+                                <Link to="/owner-dashboard" className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md font-medium">My Spaces</Link>
+                                <Link to="/owner/bookings" className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md font-medium">Bookings</Link>
+                                <Link to="/owner/earnings" className="text-gray-600 hover:text-blue-600 px-3 py-2 rounded-md font-medium">Earnings</Link>
                             </>
                         )}
                         {user.role === 'DRIVER' && (
@@ -73,6 +75,11 @@ function App() {
                             <Route path="/owner-dashboard" element={
                                 <ProtectedRoute allowedRoles={['OWNER']}>
                                     <OwnerDashboard />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/owner/earnings" element={
+                                <ProtectedRoute allowedRoles={['OWNER']}>
+                                    <EarningsDashboard />
                                 </ProtectedRoute>
                             } />
                             <Route path="/driver-dashboard" element={

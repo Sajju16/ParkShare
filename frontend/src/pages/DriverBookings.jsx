@@ -7,6 +7,8 @@ const StatusBadge = ({ status }) => {
     switch(status) {
         case 'PENDING':
             return <span className="flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold"><Clock size={14}/> Pending</span>;
+        case 'AWAITING_PAYMENT':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-bold"><Clock size={14}/> Awaiting Payment</span>;
         case 'CONFIRMED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold"><CheckCircle size={14}/> Confirmed</span>;
         case 'CANCELLED':
@@ -25,6 +27,7 @@ const DriverBookings = () => {
     const [error, setError] = useState('');
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
     const [selectedBookingId, setSelectedBookingId] = useState(null);
+    const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
     useEffect(() => {
         fetchBookings();
@@ -58,8 +61,78 @@ const DriverBookings = () => {
         }
     };
 
+    const handlePayment = async (bookingId) => {
+        setIsProcessingPayment(true);
+        try {
+            const orderRes = await api.post(`/payments/create-order/${bookingId}`);
+            if (orderRes.success) {
+                const { razorpayOrderId, amount, currency, keyId } = orderRes.data;
+
+                const options = {
+                    key: keyId,
+                    amount: amount * 100,
+                    currency: currency,
+                    name: 'ParkShare',
+                    description: 'Parking Reservation Payment',
+                    order_id: razorpayOrderId,
+                    handler: async function (response) {
+                        try {
+                            const verifyRes = await api.post('/payments/verify', {
+                                razorpayOrderId: response.razorpay_order_id,
+                                razorpayPaymentId: response.razorpay_payment_id,
+                                razorpaySignature: response.razorpay_signature
+                            });
+                            if (verifyRes.success) {
+                                alert("Payment successful! Your booking is now confirmed.");
+                                fetchBookings();
+                            }
+                        } catch (err) {
+                            alert("Payment verification failed.");
+                        }
+                    },
+                    prefill: {
+                        name: 'Driver',
+                        email: 'driver@example.com'
+                    },
+                    theme: {
+                        color: '#2563eb'
+                    }
+                };
+
+                const rzp = new window.Razorpay(options);
+                rzp.on('payment.failed', function (response) {
+                    alert("Payment failed: " + response.error.description);
+                });
+                rzp.open();
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || "Failed to initiate payment.");
+        } finally {
+            setIsProcessingPayment(false);
+        }
+    };
+
+    const downloadReceipt = async (bookingId) => {
+        try {
+            const response = await api.get(`/payments/receipt/booking/${bookingId}`, { responseType: 'blob' });
+            
+            // Create a blob URL and trigger download
+            const blob = new Blob([response], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `receipt_booking_${bookingId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            alert("Failed to download receipt.");
+        }
+    };
+
     const now = new Date();
-    const upcomingBookings = bookings.filter(b => new Date(b.startTime) > now && ['PENDING', 'CONFIRMED'].includes(b.status));
+    const upcomingBookings = bookings.filter(b => new Date(b.startTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED'].includes(b.status));
     const pastBookings = bookings.filter(b => new Date(b.startTime) <= now || ['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status));
 
     const renderBookingCard = (booking, isUpcoming) => (
@@ -84,9 +157,29 @@ const DriverBookings = () => {
                 </div>
             </div>
             
-            <div className="flex flex-col items-end w-full md:w-auto">
-                <p className="text-2xl font-extrabold text-blue-600 mb-4">${booking.totalPrice.toFixed(2)}</p>
-                {isUpcoming && ['PENDING', 'CONFIRMED'].includes(booking.status) && (
+            <div className="flex flex-col items-end w-full md:w-auto gap-3">
+                <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
+                
+                {booking.status === 'AWAITING_PAYMENT' && (
+                    <button 
+                        onClick={() => handlePayment(booking.id)}
+                        disabled={isProcessingPayment}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm"
+                    >
+                        {isProcessingPayment ? "Processing..." : "Pay Now"}
+                    </button>
+                )}
+
+                {['CONFIRMED', 'COMPLETED'].includes(booking.status) && (
+                    <button 
+                        onClick={() => downloadReceipt(booking.id)}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm border border-gray-300"
+                    >
+                        Download Receipt
+                    </button>
+                )}
+
+                {isUpcoming && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED'].includes(booking.status) && (
                     <button 
                         onClick={() => handleCancelClick(booking.id)}
                         className="text-red-500 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto"
