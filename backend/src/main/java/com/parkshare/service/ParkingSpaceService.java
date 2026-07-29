@@ -82,6 +82,9 @@ public class ParkingSpaceService {
         space.setAddress(request.getAddress());
         space.setCity(request.getCity());
         space.setZipCode(request.getZipCode());
+        // FIX 4: Save latitude and longitude for map markers
+        space.setLatitude(request.getLatitude());
+        space.setLongitude(request.getLongitude());
         space.setPricePerHour(request.getPricePerHour());
         space.setPricePerDay(request.getPricePerDay());
         space.setVehicleType(request.getVehicleType());
@@ -102,6 +105,9 @@ public class ParkingSpaceService {
                 .address(space.getAddress())
                 .city(space.getCity())
                 .zipCode(space.getZipCode())
+                // FIX 4: Include coordinates in the response for map rendering
+                .latitude(space.getLatitude())
+                .longitude(space.getLongitude())
                 .pricePerHour(space.getPricePerHour())
                 .pricePerDay(space.getPricePerDay())
                 .vehicleType(space.getVehicleType())

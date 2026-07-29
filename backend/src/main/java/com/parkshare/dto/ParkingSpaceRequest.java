@@ -21,6 +21,10 @@ public class ParkingSpaceRequest {
     private String city;
     private String zipCode;
 
+    // FIX 4: Accept coordinates for map marker placement
+    private Double latitude;
+    private Double longitude;
+
     @NotNull(message = "Price per hour is required")
     private Double pricePerHour;
 

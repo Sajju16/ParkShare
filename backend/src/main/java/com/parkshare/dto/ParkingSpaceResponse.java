@@ -17,6 +17,9 @@ public class ParkingSpaceResponse {
     private String address;
     private String city;
     private String zipCode;
+    // FIX 4: Return coordinates so the map can render markers
+    private Double latitude;
+    private Double longitude;
     private Double pricePerHour;
     private Double pricePerDay;
     private VehicleType vehicleType;

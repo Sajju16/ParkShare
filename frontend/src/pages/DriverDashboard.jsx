@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Link } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
@@ -18,8 +18,15 @@ const DriverDashboard = () => {
     const [cityFilter, setCityFilter] = useState('');
     const [typeFilter, setTypeFilter] = useState('');
 
+    // FIX: Debounce the city filter so API isn't called on every keystroke
+    const debounceTimer = useRef(null);
+
     useEffect(() => {
-        fetchSpaces();
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(() => {
+            fetchSpaces();
+        }, 400);
+        return () => clearTimeout(debounceTimer.current);
     }, [cityFilter, typeFilter]);
 
     const fetchSpaces = async () => {
@@ -63,7 +70,8 @@ const DriverDashboard = () => {
                             <option value="HATCHBACK">Hatchback</option>
                             <option value="SEDAN">Sedan</option>
                             <option value="SUV">SUV</option>
-                            <option value="TWO_WHEELER">Two Wheeler</option>
+                            {/* FIX 5: Use BIKE to match backend VehicleType enum (not TWO_WHEELER) */}
+                            <option value="BIKE">Bike / Two Wheeler</option>
                         </select>
                     </div>
                 </div>
@@ -86,9 +94,9 @@ const DriverDashboard = () => {
                 </div>
             </div>
 
-            {/* Map View */}
+            {/* Map View — FIX 4: default center set to Bengaluru, India */}
             <div className="w-2/3 h-full z-0">
-                <MapContainer center={[40.7128, -74.0060]} zoom={12} className="w-full h-full">
+                <MapContainer center={[12.9716, 77.5946]} zoom={12} className="w-full h-full">
                     <TileLayer
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

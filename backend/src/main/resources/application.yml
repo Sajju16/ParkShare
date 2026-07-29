@@ -2,21 +2,23 @@ spring:
   application:
     name: ParkShare
   datasource:
-    url: jdbc:h2:mem:parkshare_db;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    # FIX 6: Database credentials read from environment variables with safe local defaults
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:parkshare_db;DB_CLOSE_DELAY=-1}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.H2Dialect}
   h2:
     console:
-      enabled: true
+      # Disable H2 console when running in any non-local environment
+      enabled: ${H2_CONSOLE_ENABLED:true}
       path: /h2-console
 
 server:
@@ -24,13 +26,18 @@ server:
 
 app:
   jwt:
-    secret: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
-    expirationMs: 86400000 # 24 hours
+    # FIX 6: JWT secret must be provided via environment variable in production.
+    # For local development, a default is provided below — DO NOT use this default in production.
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    expirationMs: ${JWT_EXPIRATION_MS:86400000}
   cloudinary:
     cloud-name: ${CLOUDINARY_CLOUD_NAME:dummy_cloud}
     api-key: ${CLOUDINARY_API_KEY:dummy_key}
     api-secret: ${CLOUDINARY_API_SECRET:dummy_secret}
 
 razorpay:
-  key-id: rzp_test_mockkeyid123
-  key-secret: mocksecretkey456789
+  # FIX 6: Razorpay keys read from environment variables.
+  # For testing, create a free Razorpay test account and set these env vars.
+  # Note: Currency must be INR for Razorpay India.
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_placeholder}
+  key-secret: ${RAZORPAY_KEY_SECRET:placeholder_secret}
