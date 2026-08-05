@@ -9,10 +9,10 @@ const OwnerDashboard = () => {
     const [spaceForm, setSpaceForm] = useState({
         title: '', description: '', address: '', city: '', zipCode: '',
         pricePerHour: '', pricePerDay: '',
-        // FIX 4: add latitude and longitude for map markers
         latitude: '', longitude: '',
-        // FIX 5: use 'BIKE' to match the backend VehicleType enum
-        vehicleType: 'SEDAN', isCovered: false, hasEvCharging: false
+        vehicleType: 'SEDAN',
+        propertyType: 'HOUSE',  // PRD v1.0
+        isCovered: false, hasEvCharging: false
     });
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
@@ -74,7 +74,8 @@ const OwnerDashboard = () => {
                 setSpaceForm({
                     title: '', description: '', address: '', city: '', zipCode: '',
                     pricePerHour: '', pricePerDay: '', latitude: '', longitude: '',
-                    vehicleType: 'SEDAN', isCovered: false, hasEvCharging: false
+                    vehicleType: 'SEDAN', propertyType: 'HOUSE',
+                    isCovered: false, hasEvCharging: false
                 });
                 setFile(null);
                 fetchSpaces();
@@ -111,6 +112,21 @@ const OwnerDashboard = () => {
                             value={spaceForm.city} onChange={e => setSpaceForm({...spaceForm, city: e.target.value})} />
                         <input className="border p-2 w-full rounded" placeholder="Zip Code"
                             value={spaceForm.zipCode} onChange={e => setSpaceForm({...spaceForm, zipCode: e.target.value})} />
+                    </div>
+
+                    {/* PRD v1.0: Property Type – HOUSE or APARTMENT */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Property Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                            className="border p-2 w-full rounded"
+                            required
+                            value={spaceForm.propertyType}
+                            onChange={e => setSpaceForm({...spaceForm, propertyType: e.target.value})}>
+                            <option value="HOUSE">🏠 House</option>
+                            <option value="APARTMENT">🏢 Apartment</option>
+                        </select>
                     </div>
 
                     <div className="flex gap-4">
@@ -181,7 +197,9 @@ const OwnerDashboard = () => {
                         <h3 className="font-bold text-xl">{space.title}</h3>
                         <p className="text-gray-600 text-sm">{space.address}, {space.city}</p>
                         <p className="font-bold mt-2 text-blue-600">${space.pricePerHour}/hr</p>
-                        <p className="text-xs text-gray-400 mt-1">{space.vehicleType}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                            {space.vehicleType} &bull; {space.propertyType === 'HOUSE' ? '🏠 House' : '🏢 Apartment'}
+                        </p>
                         {space.latitude && space.longitude && (
                             <p className="text-xs text-green-600 mt-1">📍 {space.latitude}, {space.longitude}</p>
                         )}

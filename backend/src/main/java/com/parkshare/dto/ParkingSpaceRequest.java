@@ -1,5 +1,6 @@
 package com.parkshare.dto;
 
+import com.parkshare.entity.PropertyType;
 import com.parkshare.entity.VehicleType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -32,6 +33,10 @@ public class ParkingSpaceRequest {
 
     @NotNull(message = "Vehicle type is required")
     private VehicleType vehicleType;
+
+    /** PRD v1.0: HOUSE or APARTMENT. Defaults to HOUSE if not supplied. */
+    @NotNull(message = "Property type is required")
+    private PropertyType propertyType = PropertyType.HOUSE;
 
     private boolean isCovered;
     private boolean hasEvCharging;

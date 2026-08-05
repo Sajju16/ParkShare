@@ -1,12 +1,14 @@
 package com.parkshare.dto;
 
-import jakarta.validation.constraints.Future;
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * PRD v1.0: Date/time validation is enforced in BookingService, not via bean-validation
+ * annotations, because the "today-or-tomorrow" window requires runtime logic.
+ */
 @Data
 public class BookingRequest {
 
@@ -14,10 +16,8 @@ public class BookingRequest {
     private Long parkingSpaceId;
 
     @NotNull(message = "Start time is required")
-    @FutureOrPresent(message = "Start time must be in the present or future")
     private LocalDateTime startTime;
 
     @NotNull(message = "End time is required")
-    @Future(message = "End time must be in the future")
     private LocalDateTime endTime;
 }

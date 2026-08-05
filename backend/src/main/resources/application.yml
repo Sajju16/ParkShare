@@ -1,6 +1,11 @@
 spring:
   application:
     name: ParkShare
+  task:
+    scheduling:
+      pool:
+        size: 2   # 2 threads for 3 concurrent scheduler tasks (PRD v1.0 Slice 3)
+
   datasource:
     # FIX 6: Database credentials read from environment variables with safe local defaults
     url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:parkshare_db;DB_CLOSE_DELAY=-1}

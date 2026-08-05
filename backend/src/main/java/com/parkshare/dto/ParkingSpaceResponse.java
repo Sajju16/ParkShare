@@ -1,5 +1,6 @@
 package com.parkshare.dto;
 
+import com.parkshare.entity.PropertyType;
 import com.parkshare.entity.VehicleType;
 import lombok.Builder;
 import lombok.Data;
@@ -23,6 +24,7 @@ public class ParkingSpaceResponse {
     private Double pricePerHour;
     private Double pricePerDay;
     private VehicleType vehicleType;
+    private PropertyType propertyType;
     private boolean covered;
     private boolean evCharging;
     private boolean available;

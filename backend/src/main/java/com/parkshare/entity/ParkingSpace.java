@@ -40,6 +40,14 @@ public class ParkingSpace extends BaseEntity {
     @Column(nullable = false)
     private VehicleType vehicleType;
 
+    /**
+     * PRD v1.0: Every parking space must declare whether it belongs to a
+     * HOUSE or an APARTMENT property.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "VARCHAR(20) DEFAULT 'HOUSE'")
+    private PropertyType propertyType = PropertyType.HOUSE;
+
     private boolean isCovered;
     private boolean hasEvCharging;
 

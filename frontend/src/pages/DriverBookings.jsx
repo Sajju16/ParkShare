@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Key } from 'lucide-react';
 
 const StatusBadge = ({ status }) => {
     switch(status) {
@@ -11,16 +11,25 @@ const StatusBadge = ({ status }) => {
             return <span className="flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-bold"><Clock size={14}/> Awaiting Payment</span>;
         case 'CONFIRMED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold"><CheckCircle size={14}/> Confirmed</span>;
+        case 'ACTIVE':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-bold"><Key size={14}/> Active</span>;
         case 'CANCELLED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold"><XCircle size={14}/> Cancelled</span>;
         case 'REJECTED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold"><AlertCircle size={14}/> Rejected</span>;
+        case 'AUTO_REJECTED':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold"><AlertCircle size={14}/> Auto-Rejected (Timed Out)</span>;
+        case 'PAYMENT_EXPIRED':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold"><AlertCircle size={14}/> Payment Expired</span>;
         case 'COMPLETED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold"><CheckCircle size={14}/> Completed</span>;
+        case 'NO_SHOW':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-bold"><XCircle size={14}/> No Show</span>;
         default:
-            return <span>{status}</span>;
+            return <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">{status}</span>;
     }
 };
+
 
 const DriverBookings = () => {
     const [bookings, setBookings] = useState([]);
@@ -50,9 +59,7 @@ const DriverBookings = () => {
     const executeCancel = async () => {
         try {
             const res = await api.put(`/bookings/${selectedBookingId}/cancel`);
-            if (res.success) {
-                fetchBookings();
-            }
+            if (res.success) fetchBookings();
         } catch (err) {
             alert(err.response?.data?.message || "Failed to cancel booking.");
         } finally {
@@ -67,7 +74,6 @@ const DriverBookings = () => {
             const orderRes = await api.post(`/payments/create-order/${bookingId}`);
             if (orderRes.success) {
                 const { razorpayOrderId, amount, currency, keyId } = orderRes.data;
-
                 const options = {
                     key: keyId,
                     amount: amount * 100,
@@ -83,22 +89,16 @@ const DriverBookings = () => {
                                 razorpaySignature: response.razorpay_signature
                             });
                             if (verifyRes.success) {
-                                alert("Payment successful! Your booking is now confirmed.");
+                                alert("Payment successful! Your booking is now confirmed. Check your OTP below.");
                                 fetchBookings();
                             }
                         } catch (err) {
                             alert("Payment verification failed.");
                         }
                     },
-                    prefill: {
-                        name: 'Driver',
-                        email: 'driver@example.com'
-                    },
-                    theme: {
-                        color: '#2563eb'
-                    }
+                    prefill: { name: 'Driver', email: 'driver@example.com' },
+                    theme: { color: '#2563eb' }
                 };
-
                 const rzp = new window.Razorpay(options);
                 rzp.on('payment.failed', function (response) {
                     alert("Payment failed: " + response.error.description);
@@ -115,8 +115,6 @@ const DriverBookings = () => {
     const downloadReceipt = async (bookingId) => {
         try {
             const response = await api.get(`/payments/receipt/booking/${bookingId}`, { responseType: 'blob' });
-            
-            // Create a blob URL and trigger download
             const blob = new Blob([response], { type: 'application/pdf' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -132,62 +130,89 @@ const DriverBookings = () => {
     };
 
     const now = new Date();
-    const upcomingBookings = bookings.filter(b => new Date(b.startTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED'].includes(b.status));
-    const pastBookings = bookings.filter(b => new Date(b.startTime) <= now || ['CANCELLED', 'REJECTED', 'COMPLETED'].includes(b.status));
+    const TERMINAL_STATUSES = ['CANCELLED', 'REJECTED', 'AUTO_REJECTED', 'PAYMENT_EXPIRED', 'COMPLETED', 'NO_SHOW'];
+    const upcomingBookings = bookings.filter(b =>
+        new Date(b.startTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'ACTIVE'].includes(b.status)
+    );
+    const pastBookings = bookings.filter(b =>
+        new Date(b.startTime) <= now || TERMINAL_STATUSES.includes(b.status)
+    );
 
     const renderBookingCard = (booking, isUpcoming) => (
-        <div key={booking.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition">
-            <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-xl font-bold text-gray-800">{booking.parkingSpaceTitle}</h2>
-                    <StatusBadge status={booking.status} />
+        <div key={booking.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col gap-4 hover:shadow-md transition">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                        <h2 className="text-xl font-bold text-gray-800">{booking.parkingSpaceTitle}</h2>
+                        <StatusBadge status={booking.status} />
+                    </div>
+                    <p className="text-gray-500 text-sm mb-3">{booking.parkingSpaceAddress}</p>
+
+                    <div className="flex items-center gap-6 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 inline-block w-full md:w-auto">
+                        <div>
+                            <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Start</p>
+                            <p className="font-semibold">{new Date(booking.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                        </div>
+                        <div className="w-px h-8 bg-gray-300"></div>
+                        <div>
+                            <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">End</p>
+                            <p className="font-semibold">{new Date(booking.endTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                        </div>
+                    </div>
                 </div>
-                <p className="text-gray-500 text-sm mb-3">{booking.parkingSpaceAddress}</p>
-                
-                <div className="flex items-center gap-6 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 inline-block w-full md:w-auto">
-                    <div>
-                        <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Start</p>
-                        <p className="font-semibold">{new Date(booking.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                    </div>
-                    <div className="w-px h-8 bg-gray-300"></div>
-                    <div>
-                        <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">End</p>
-                        <p className="font-semibold">{new Date(booking.endTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                    </div>
+
+                <div className="flex flex-col items-end w-full md:w-auto gap-3">
+                    <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
+
+                    {booking.status === 'AWAITING_PAYMENT' && (
+                        <button
+                            onClick={() => handlePayment(booking.id)}
+                            disabled={isProcessingPayment}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm"
+                        >
+                            {isProcessingPayment ? "Processing..." : "Pay Now"}
+                        </button>
+                    )}
+
+                    {['CONFIRMED', 'COMPLETED', 'ACTIVE'].includes(booking.status) && (
+                        <button
+                            onClick={() => downloadReceipt(booking.id)}
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm border border-gray-300"
+                        >
+                            Download Receipt
+                        </button>
+                    )}
+
+                    {isUpcoming && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED'].includes(booking.status) && (
+                        <button
+                            onClick={() => handleCancelClick(booking.id)}
+                            className="text-red-500 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto"
+                        >
+                            Cancel Booking
+                        </button>
+                    )}
                 </div>
             </div>
-            
-            <div className="flex flex-col items-end w-full md:w-auto gap-3">
-                <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
-                
-                {booking.status === 'AWAITING_PAYMENT' && (
-                    <button 
-                        onClick={() => handlePayment(booking.id)}
-                        disabled={isProcessingPayment}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm"
-                    >
-                        {isProcessingPayment ? "Processing..." : "Pay Now"}
-                    </button>
-                )}
 
-                {['CONFIRMED', 'COMPLETED'].includes(booking.status) && (
-                    <button 
-                        onClick={() => downloadReceipt(booking.id)}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm border border-gray-300"
-                    >
-                        Download Receipt
-                    </button>
-                )}
-
-                {isUpcoming && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED'].includes(booking.status) && (
-                    <button 
-                        onClick={() => handleCancelClick(booking.id)}
-                        className="text-red-500 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto"
-                    >
-                        Cancel Booking
-                    </button>
-                )}
-            </div>
+            {/* PRD v1.0 Slice 2: OTP display — CONFIRMED bookings only, visible to driver */}
+            {booking.status === 'CONFIRMED' && booking.otpCode && (
+                <div className="mt-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-xl p-4 flex items-center gap-4">
+                    <div className="p-3 bg-green-100 rounded-full">
+                        <Key size={24} className="text-green-600" />
+                    </div>
+                    <div>
+                        <p className="text-xs text-green-700 font-semibold uppercase tracking-wider mb-1">
+                            Your Parking OTP
+                        </p>
+                        <p className="text-4xl font-mono font-extrabold text-green-800 tracking-[0.3em] leading-none">
+                            {booking.otpCode}
+                        </p>
+                        <p className="text-sm text-green-600 mt-2">
+                            Show this OTP to the parking owner when you arrive.
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 
@@ -195,7 +220,7 @@ const DriverBookings = () => {
         <div className="max-w-5xl mx-auto p-6 md:p-8">
             <h1 className="text-4xl font-extrabold mb-8 text-gray-800">My Bookings</h1>
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">{error}</div>}
-            
+
             <div className="mb-12">
                 <h2 className="text-2xl font-bold text-gray-700 border-b pb-3 mb-6">Upcoming Reservations</h2>
                 <div className="space-y-4">
@@ -212,7 +237,7 @@ const DriverBookings = () => {
                 </div>
             </div>
 
-            <ConfirmationModal 
+            <ConfirmationModal
                 isOpen={cancelModalOpen}
                 title="Cancel Booking"
                 message="Are you sure you want to cancel this booking? This action cannot be undone."

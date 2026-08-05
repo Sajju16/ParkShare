@@ -3,6 +3,33 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 
+// ─── PRD v1.0 date-window helpers ───────────────────────────────────────────
+
+/** Returns the current time + 1 minute as a datetime-local string (browser local).
+ *  Used as the `min` attribute so drivers cannot pick a start time in the past. */
+const getTodayMin = () => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    now.setMinutes(now.getMinutes() + 1);
+    // toISOString returns UTC — convert to local ISO-like string
+    const offset = now.getTimezoneOffset();
+    const local = new Date(now.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
+};
+
+/** Returns tomorrow at 23:59 local time as a datetime-local string.
+ *  Used as the `max` attribute to prevent bookings beyond tomorrow. */
+const getTomorrowMax = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(23, 59, 0, 0);
+    const offset = tomorrow.getTimezoneOffset();
+    const local = new Date(tomorrow.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
+};
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
 const ParkingSpaceDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -12,6 +39,10 @@ const ParkingSpaceDetails = () => {
     const [endTime, setEndTime] = useState('');
     const [error, setError] = useState('');
     const [bookingSuccess, setBookingSuccess] = useState(false);
+
+    // Allowed booking window — today now → tomorrow 23:59
+    const minDateTime = getTodayMin();
+    const maxDateTime = getTomorrowMax();
 
     useEffect(() => {
         const fetchSpace = async () => {
@@ -38,11 +69,37 @@ const ParkingSpaceDetails = () => {
     const handleBooking = async (e) => {
         e.preventDefault();
         setError('');
-        
+
         if (!user) {
             navigate('/login');
             return;
         }
+
+        // ── PRD v1.0 client-side pre-validation ────────────────────────────
+        const now = new Date();
+        const start = new Date(startTime);
+        const end = new Date(endTime);
+        const tomorrowEnd = new Date();
+        tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+        tomorrowEnd.setHours(23, 59, 59, 999);
+
+        if (start <= now) {
+            setError('Start time must be in the future.');
+            return;
+        }
+        if (end <= start) {
+            setError('End time must be after start time.');
+            return;
+        }
+        if (start > tomorrowEnd) {
+            setError('Bookings are only allowed for today or tomorrow.');
+            return;
+        }
+        if (end > tomorrowEnd) {
+            setError('End time must fall within today or tomorrow.');
+            return;
+        }
+        // ───────────────────────────────────────────────────────────────────
 
         try {
             const res = await api.post('/bookings', {
@@ -68,13 +125,13 @@ const ParkingSpaceDetails = () => {
             <div className="md:col-span-2 space-y-6">
                 <h1 className="text-4xl font-extrabold text-gray-800">{space.title}</h1>
                 <p className="text-gray-500 text-lg">{space.address}, {space.city} {space.zipCode}</p>
-                
+
                 {space.images?.length > 0 ? (
                     <img src={space.images[0]} alt="Parking Space" className="w-full h-96 object-cover rounded-xl shadow-lg" />
                 ) : (
                     <div className="w-full h-96 bg-gray-200 rounded-xl flex items-center justify-center text-gray-500 shadow-inner">No Image Available</div>
                 )}
-                
+
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <h2 className="text-2xl font-bold mb-4">Description</h2>
                     <p className="text-gray-700 leading-relaxed">{space.description || "No description provided."}</p>
@@ -84,6 +141,7 @@ const ParkingSpaceDetails = () => {
                     <h2 className="text-2xl font-bold mb-4">Features</h2>
                     <ul className="grid grid-cols-2 gap-4 text-gray-700">
                         <li><span className="font-semibold">Vehicle Type:</span> {space.vehicleType}</li>
+                        <li><span className="font-semibold">Property:</span> {space.propertyType === 'HOUSE' ? '🏠 House' : '🏢 Apartment'}</li>
                         <li><span className="font-semibold">Covered:</span> {space.covered ? "Yes" : "No"}</li>
                         <li><span className="font-semibold">EV Charging:</span> {space.evCharging ? "Yes" : "No"}</li>
                         <li><span className="font-semibold">Owner:</span> {space.ownerName}</li>
@@ -94,7 +152,12 @@ const ParkingSpaceDetails = () => {
             <div className="md:col-span-1">
                 <div className="bg-white p-6 rounded-xl shadow-xl sticky top-6 border border-gray-100">
                     <h3 className="text-2xl font-bold text-gray-800 mb-2">${space.pricePerHour} <span className="text-gray-500 text-lg font-normal">/ hour</span></h3>
-                    {space.pricePerDay && <p className="text-gray-500 mb-6">${space.pricePerDay} / day</p>}
+                    {space.pricePerDay && <p className="text-gray-500 mb-4">${space.pricePerDay} / day</p>}
+
+                    {/* PRD v1.0: Booking window reminder */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
+                        📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
+                    </div>
 
                     {bookingSuccess ? (
                         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
@@ -103,23 +166,27 @@ const ParkingSpaceDetails = () => {
                     ) : (
                         <form onSubmit={handleBooking} className="space-y-4">
                             {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
-                            
+
                             <div>
                                 <label className="block text-gray-700 font-medium mb-1">Start Time</label>
-                                <input 
-                                    type="datetime-local" 
+                                <input
+                                    type="datetime-local"
                                     value={startTime}
+                                    min={minDateTime}
+                                    max={maxDateTime}
                                     onChange={(e) => setStartTime(e.target.value)}
                                     required
                                     className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
                             </div>
-                            
+
                             <div>
                                 <label className="block text-gray-700 font-medium mb-1">End Time</label>
-                                <input 
-                                    type="datetime-local" 
+                                <input
+                                    type="datetime-local"
                                     value={endTime}
+                                    min={startTime || minDateTime}
+                                    max={maxDateTime}
                                     onChange={(e) => setEndTime(e.target.value)}
                                     required
                                     className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
@@ -133,8 +200,8 @@ const ParkingSpaceDetails = () => {
                                 </div>
                             )}
 
-                            <button 
-                                type="submit" 
+                            <button
+                                type="submit"
                                 disabled={totalPrice <= 0 || !space.available || user?.role === 'OWNER'}
                                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >

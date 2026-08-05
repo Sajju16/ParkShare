@@ -88,6 +88,7 @@ public class ParkingSpaceService {
         space.setPricePerHour(request.getPricePerHour());
         space.setPricePerDay(request.getPricePerDay());
         space.setVehicleType(request.getVehicleType());
+        space.setPropertyType(request.getPropertyType());
         space.setCovered(request.isCovered());
         space.setHasEvCharging(request.isHasEvCharging());
         if (request.getImages() != null) {
@@ -111,6 +112,7 @@ public class ParkingSpaceService {
                 .pricePerHour(space.getPricePerHour())
                 .pricePerDay(space.getPricePerDay())
                 .vehicleType(space.getVehicleType())
+                .propertyType(space.getPropertyType())
                 .covered(space.isCovered())
                 .evCharging(space.isHasEvCharging())
                 .available(space.isAvailable())

@@ -3,6 +3,7 @@ package com.parkshare.controller;
 import com.parkshare.dto.ApiResponse;
 import com.parkshare.dto.BookingRequest;
 import com.parkshare.dto.BookingResponse;
+import com.parkshare.dto.OtpVerificationRequest;
 import com.parkshare.service.BookingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -59,5 +60,20 @@ public class BookingController {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<com.parkshare.dto.OwnerStatsResponse>> getOwnerStats() {
         return ResponseEntity.ok(ApiResponse.success("Owner stats fetched", bookingService.getOwnerStats()));
+    }
+
+    /**
+     * PRD v1.0 Slice 2: Owner submits the OTP shown by the driver.
+     * On success: booking transitions CONFIRMED → ACTIVE.
+     * On failure: attempt counter incremented; locked after 3 failures.
+     */
+    @PutMapping("/{id}/verify-otp")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> verifyOtp(
+            @PathVariable Long id,
+            @Valid @RequestBody OtpVerificationRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "OTP verified successfully. Booking is now ACTIVE.",
+                bookingService.verifyOtp(id, request)));
     }
 }

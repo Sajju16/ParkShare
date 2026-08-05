@@ -35,6 +35,7 @@ public class PaymentService {
     private final BookingRepository bookingRepository;
     private final AuthService authService;
     private final NotificationService notificationService;
+    private final BookingService bookingService;
 
     @Value("${razorpay.key-id}")
     private String razorpayKeyId;
@@ -121,6 +122,10 @@ public class PaymentService {
                 Booking booking = payment.getBooking();
                 booking.setStatus(BookingStatus.CONFIRMED);
                 bookingRepository.save(booking);
+
+                // PRD v1.0 Slice 2: generate the 4-digit OTP immediately after
+                // payment is confirmed, so the driver can see it straight away.
+                bookingService.generateOtp(booking.getId());
 
                 notificationService.sendNotification(
                     booking.getDriver().getEmail(),
