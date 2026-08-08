@@ -63,9 +63,51 @@ public class Booking extends BaseEntity {
     private String otpCode;
 
     /**
-     * Counts how many times the owner entered an incorrect OTP.
+     * Counts how many times the owner entered an incorrect opening OTP.
      * When this reaches 3 the booking is locked and verification is blocked.
      */
     @Column(name = "otp_attempts", nullable = false, columnDefinition = "INT DEFAULT 0")
     private int otpAttempts = 0;
+
+    // ── Closing OTP (departure confirmation) ─────────────────────────────────────────
+
+    /**
+     * 4-digit closing OTP generated when driver calls initiate-checkout.
+     * Driver shows this to the owner to confirm physical departure from the space.
+     * Visible to drivers only; never returned in owner-facing responses.
+     */
+    @Column(name = "closing_otp_code", length = 4)
+    private String closingOtpCode;
+
+    /**
+     * Counts how many times the owner entered an incorrect closing OTP.
+     * Independent of otpAttempts (which tracks the opening OTP).
+     */
+    @Column(name = "closing_otp_attempts", nullable = false, columnDefinition = "INT DEFAULT 0")
+    private int closingOtpAttempts = 0;
+
+    // ── Overstay tracking ──────────────────────────────────────────────────
+
+    /**
+     * Set by the scheduler when an ACTIVE booking transitions to OVERSTAY.
+     * Equals the scheduled endTime (not the actual scheduler execution time)
+     * so overstay charges begin precisely at the expected departure time.
+     */
+    @Column(name = "overstay_started_at")
+    private LocalDateTime overstayStartedAt;
+
+    /**
+     * Set when the closing OTP is successfully verified and the booking
+     * transitions to COMPLETED. Records the actual physical release time.
+     */
+    @Column(name = "actual_closed_at")
+    private LocalDateTime actualClosedAt;
+
+    /**
+     * Extra charge for time spent beyond the scheduled endTime.
+     * Calculated at closing time: overstayMinutes x (pricePerHour / 60).
+     * Null if no overstay occurred.
+     */
+    @Column(name = "overstay_extra_charge")
+    private Double overstayExtraCharge;
 }

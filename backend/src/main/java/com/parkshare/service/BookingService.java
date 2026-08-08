@@ -8,6 +8,7 @@ import com.parkshare.entity.BookingStatus;
 import com.parkshare.entity.ParkingSpace;
 import com.parkshare.entity.User;
 import com.parkshare.repository.BookingRepository;
+import com.parkshare.repository.PaymentRepository;
 import com.parkshare.repository.ParkingSpaceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,10 +28,11 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final ParkingSpaceRepository parkingSpaceRepository;
+    private final PaymentRepository paymentRepository;
     private final AuthService authService;
     private final NotificationService notificationService;
 
-    /** Max OTP wrong attempts before verification is locked. */
+    /** Max wrong attempts for either OTP before verification is locked. */
     private static final int MAX_OTP_ATTEMPTS = 3;
 
     /** Cryptographically-secure random for OTP generation. */
@@ -141,6 +143,153 @@ public class BookingService {
             String message = remaining > 0
                     ? "Incorrect OTP. " + remaining + " attempt(s) remaining."
                     : "Incorrect OTP. No more attempts allowed. Verification is now locked.";
+            throw new RuntimeException(message);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PRD v1.1 – Closing OTP: initiate checkout
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Driver signals they are ready to leave.
+     * Generates a 4-digit closing OTP and returns it to the driver.
+     * Booking must be ACTIVE or OVERSTAY.
+     */
+    @Transactional
+    public BookingResponse initiateCheckout(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        User driver = authService.getCurrentUser();
+        if (!booking.getDriver().getId().equals(driver.getId())) {
+            throw new RuntimeException("Unauthorized: you do not own this booking.");
+        }
+
+        if (booking.getStatus() != BookingStatus.ACTIVE
+                && booking.getStatus() != BookingStatus.OVERSTAY) {
+            throw new IllegalStateException(
+                    "Checkout can only be initiated for ACTIVE or OVERSTAY bookings.");
+        }
+
+        if (booking.getClosingOtpCode() != null) {
+            // Idempotent: if already initiated, just return current state
+            return mapToDriverResponse(booking);
+        }
+
+        String closingOtp = String.format("%04d", SECURE_RANDOM.nextInt(10000));
+        booking.setClosingOtpCode(closingOtp);
+        booking.setClosingOtpAttempts(0);
+        booking = bookingRepository.save(booking);
+
+        // Notify owner that the driver is ready to leave
+        notificationService.sendNotification(
+                booking.getParkingSpace().getOwner().getEmail(),
+                "Driver Ready to Leave — Closing OTP Required",
+                "The driver for booking #" + booking.getId() + " at \""
+                        + booking.getParkingSpace().getTitle()
+                        + "\" has initiated checkout. Ask them for their 4-digit closing OTP "
+                        + "and verify it in your Bookings dashboard to release the space."
+        );
+
+        return mapToDriverResponse(booking);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // PRD v1.1 – Closing OTP: owner verification → COMPLETED
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Owner submits the closing OTP the departing driver shows them.
+     *
+     * Business rules:
+     * - Booking must be ACTIVE or OVERSTAY.
+     * - Driver must have already called initiateCheckout (closingOtpCode != null).
+     * - After 3 wrong attempts verification is locked.
+     * - Correct OTP → COMPLETED + overstay charge calculated.
+     * - Wrong OTP → closingOtpAttempts incremented, status unchanged.
+     */
+    @Transactional
+    public BookingResponse verifyClosingOtp(Long bookingId, OtpVerificationRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        User owner = authService.getCurrentUser();
+        if (!booking.getParkingSpace().getOwner().getId().equals(owner.getId())) {
+            throw new RuntimeException("Unauthorized: you do not own this parking space.");
+        }
+
+        if (booking.getStatus() != BookingStatus.ACTIVE
+                && booking.getStatus() != BookingStatus.OVERSTAY) {
+            throw new RuntimeException(
+                    "Closing OTP verification is only allowed for ACTIVE or OVERSTAY bookings.");
+        }
+
+        if (booking.getClosingOtpCode() == null) {
+            throw new RuntimeException(
+                    "Driver has not yet initiated checkout. Ask the driver to click 'I'm Ready to Leave' first.");
+        }
+
+        if (booking.getClosingOtpAttempts() >= MAX_OTP_ATTEMPTS) {
+            throw new RuntimeException(
+                    "Closing OTP verification is locked after " + MAX_OTP_ATTEMPTS
+                            + " incorrect attempts. Please contact support.");
+        }
+
+        if (booking.getClosingOtpCode().equals(request.getOtpCode())) {
+            // ✅ Correct closing OTP → COMPLETED
+            LocalDateTime closedAt = LocalDateTime.now();
+            booking.setStatus(BookingStatus.COMPLETED);
+            booking.setActualClosedAt(closedAt);
+
+            // Calculate overstay extra charge (if the booking entered OVERSTAY state)
+            if (booking.getOverstayStartedAt() != null) {
+                long overstayMinutes = Duration.between(booking.getOverstayStartedAt(), closedAt).toMinutes();
+                if (overstayMinutes > 0) {
+                    double ratePerMinute = booking.getParkingSpace().getPricePerHour() / 60.0;
+                    double extraCharge = Math.round(overstayMinutes * ratePerMinute * 100.0) / 100.0;
+                    booking.setOverstayExtraCharge(extraCharge);
+
+                    // Update the existing payment record with overstay amount
+                    paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
+                        payment.setOverstayAmount(extraCharge);
+                        paymentRepository.save(payment);
+                    });
+                }
+            }
+
+            booking = bookingRepository.save(booking);
+
+            notificationService.sendNotification(
+                    booking.getDriver().getEmail(),
+                    "Departure Confirmed — Thank You!",
+                    "Your departure from \"" + booking.getParkingSpace().getTitle()
+                            + "\" has been confirmed. "
+                            + (booking.getOverstayExtraCharge() != null && booking.getOverstayExtraCharge() > 0
+                                ? "An overstay charge of $" + String.format("%.2f", booking.getOverstayExtraCharge()) + " has been recorded."
+                                : "Thank you for using ParkShare!")
+            );
+
+            notificationService.sendNotification(
+                    booking.getParkingSpace().getOwner().getEmail(),
+                    "Space Released — Booking #" + booking.getId() + " COMPLETED",
+                    "The driver has confirmed departure from \"" + booking.getParkingSpace().getTitle()
+                            + "\". The space is now available."
+                            + (booking.getOverstayExtraCharge() != null && booking.getOverstayExtraCharge() > 0
+                                ? " Overstay charge: $" + String.format("%.2f", booking.getOverstayExtraCharge()) + "."
+                                : "")
+            );
+
+            return mapToOwnerResponse(booking);
+        } else {
+            // ❌ Wrong closing OTP
+            booking.setClosingOtpAttempts(booking.getClosingOtpAttempts() + 1);
+            bookingRepository.save(booking);
+
+            int remaining = MAX_OTP_ATTEMPTS - booking.getClosingOtpAttempts();
+            String message = remaining > 0
+                    ? "Incorrect closing OTP. " + remaining + " attempt(s) remaining."
+                    : "Incorrect closing OTP. No more attempts allowed. Verification is now locked.";
             throw new RuntimeException(message);
         }
     }
@@ -337,28 +486,45 @@ public class BookingService {
     // ──────────────────────────────────────────────────────────────────────────
 
     /**
-     * Driver-facing mapper: includes otpCode when status is CONFIRMED.
-     * Drivers need to see their OTP to show it at the parking space.
+     * Driver-facing mapper:
+     * - Includes opening otpCode when status is CONFIRMED or ACTIVE.
+     * - Includes closing otpCode when status is ACTIVE/OVERSTAY and driver has initiated checkout.
+     * - Includes overstay fields for transparency.
      */
     private BookingResponse mapToDriverResponse(Booking booking) {
         BookingResponse r = buildBaseResponse(booking);
-        // Only expose OTP to the driver when the booking is in a state where it applies
+
+        // Opening OTP: show to driver during CONFIRMED and ACTIVE
         if (booking.getStatus() == BookingStatus.CONFIRMED
-                || booking.getStatus() == BookingStatus.ACTIVE) {
+                || booking.getStatus() == BookingStatus.ACTIVE
+                || booking.getStatus() == BookingStatus.OVERSTAY) {
             r.setOtpCode(booking.getOtpCode());
         }
         r.setOtpAttempts(booking.getOtpAttempts());
+
+        // Closing OTP: show to driver when checkout has been initiated (ACTIVE or OVERSTAY)
+        if ((booking.getStatus() == BookingStatus.ACTIVE
+                || booking.getStatus() == BookingStatus.OVERSTAY)
+                && booking.getClosingOtpCode() != null) {
+            r.setClosingOtpCode(booking.getClosingOtpCode());
+        }
+        r.setClosingOtpAttempts(booking.getClosingOtpAttempts());
+
         return r;
     }
 
     /**
-     * Owner-facing mapper: NEVER includes the otpCode.
-     * Includes otpAttempts so the owner UI can show attempt count.
+     * Owner-facing mapper:
+     * - NEVER includes either OTP value (opening or closing).
+     * - Includes attempt counters so the owner UI can show remaining tries.
+     * - Includes overstay fields so owner can see extra charge.
      */
     private BookingResponse mapToOwnerResponse(Booking booking) {
         BookingResponse r = buildBaseResponse(booking);
-        r.setOtpCode(null);  // explicit null – OTP never sent to owner
+        r.setOtpCode(null);         // explicit null – opening OTP never sent to owner
+        r.setClosingOtpCode(null);  // explicit null – closing OTP never sent to owner
         r.setOtpAttempts(booking.getOtpAttempts());
+        r.setClosingOtpAttempts(booking.getClosingOtpAttempts());
         return r;
     }
 
@@ -377,6 +543,10 @@ public class BookingService {
         r.setTotalPrice(booking.getTotalPrice());
         r.setStatus(booking.getStatus());
         r.setCreatedAt(booking.getCreatedAt());
+        // Overstay fields (safe to expose to both driver and owner)
+        r.setOverstayStartedAt(booking.getOverstayStartedAt());
+        r.setActualClosedAt(booking.getActualClosedAt());
+        r.setOverstayExtraCharge(booking.getOverstayExtraCharge());
         return r;
     }
 }

@@ -13,19 +13,39 @@ import java.util.List;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
+    // ── Overlap check ─────────────────────────────────────────────────────────
+
+    /**
+     * Returns true if the parking space is blocked for any part of the
+     * requested [startTime, endTime] window.
+     *
+     * Blocked statuses:
+     *   CONFIRMED – paid, driver expected → space locked for scheduled window
+     *   ACTIVE    – driver is parked       → space locked for scheduled window
+     *   OVERSTAY  – driver still parked past endTime → space locked entirely
+     *               (we don't know when they will actually leave)
+     */
     @Query("SELECT COUNT(b) > 0 FROM Booking b WHERE b.parkingSpace.id = :spaceId " +
-           "AND b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, com.parkshare.entity.BookingStatus.ACTIVE) " +
-           "AND b.startTime < :endTime AND b.endTime > :startTime")
+           "AND (" +
+           "  (b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, com.parkshare.entity.BookingStatus.ACTIVE) " +
+           "   AND b.startTime < :endTime AND b.endTime > :startTime) " +
+           "  OR " +
+           "  (b.status = com.parkshare.entity.BookingStatus.OVERSTAY)" +
+           ")")
     boolean existsOverlappingBooking(@Param("spaceId") Long spaceId,
                                      @Param("startTime") LocalDateTime startTime,
                                      @Param("endTime") LocalDateTime endTime);
+
+    // ── Basic fetch queries ───────────────────────────────────────────────────
 
     List<Booking> findByDriverIdOrderByStartTimeDesc(Long driverId);
 
     List<Booking> findByParkingSpaceOwnerIdOrderByStartTimeDesc(Long ownerId);
 
     @Query("SELECT b FROM Booking b WHERE b.parkingSpace.owner.id = :ownerId " +
-           "AND b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, com.parkshare.entity.BookingStatus.ACTIVE) " +
+           "AND b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, " +
+           "                 com.parkshare.entity.BookingStatus.ACTIVE, " +
+           "                 com.parkshare.entity.BookingStatus.OVERSTAY) " +
            "AND b.startTime <= :endOfDay AND b.endTime >= :startOfDay")
     List<Booking> findActiveBookingsForOwnerByDate(@Param("ownerId") Long ownerId,
                                                    @Param("startOfDay") LocalDateTime startOfDay,
@@ -37,7 +57,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
      * Finds PENDING bookings that have exceeded the owner-response timeout.
      * These will be transitioned to AUTO_REJECTED by the scheduler.
      *
-     * @param cutoff  = now - 5 minutes (the maximum allowed response time)
+     * @param cutoff  = now - 5 minutes
      */
     @Query("SELECT b FROM Booking b WHERE b.status = :status AND b.pendingAt < :cutoff")
     List<Booking> findByStatusAndPendingAtBefore(@Param("status") BookingStatus status,
@@ -47,19 +67,23 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
      * Finds AWAITING_PAYMENT bookings that have exceeded the payment timeout.
      * These will be transitioned to PAYMENT_EXPIRED by the scheduler.
      *
-     * @param cutoff  = now - 10 minutes (the maximum allowed payment window)
+     * @param cutoff  = now - 10 minutes
      */
     @Query("SELECT b FROM Booking b WHERE b.status = :status AND b.awaitingPaymentAt < :cutoff")
     List<Booking> findByStatusAndAwaitingPaymentAtBefore(@Param("status") BookingStatus status,
                                                           @Param("cutoff") LocalDateTime cutoff);
 
     /**
-     * Finds ACTIVE bookings whose end time has passed.
-     * These will be transitioned to COMPLETED by the scheduler.
+     * Finds ACTIVE bookings whose scheduled endTime has passed AND for which
+     * the driver has NOT yet initiated a closing-OTP checkout.
+     *
+     * These will be transitioned to OVERSTAY by the scheduler.
+     * Bookings where closingOtpCode IS NOT NULL are excluded because the driver
+     * has already started the departure process.
      *
      * @param now  current timestamp
      */
-    @Query("SELECT b FROM Booking b WHERE b.status = :status AND b.endTime < :now")
-    List<Booking> findByStatusAndEndTimeBefore(@Param("status") BookingStatus status,
-                                                @Param("now") LocalDateTime now);
+    @Query("SELECT b FROM Booking b WHERE b.status = com.parkshare.entity.BookingStatus.ACTIVE " +
+           "AND b.endTime < :now AND b.closingOtpCode IS NULL")
+    List<Booking> findActiveBookingsExceedingEndTime(@Param("now") LocalDateTime now);
 }

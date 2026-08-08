@@ -8,10 +8,11 @@ import java.time.LocalDateTime;
 /**
  * Booking response returned by the API.
  *
- * Security note: otpCode is populated ONLY when the response is built for the
- * driver (see BookingService.mapToDriverResponse).  The owner-facing mapper
- * (mapToOwnerResponse) always leaves otpCode null so that the OTP is never
- * leaked to the owner through the API.
+ * Security notes:
+ * - otpCode (opening OTP) is populated ONLY in driver-facing responses when status=CONFIRMED/ACTIVE.
+ * - closingOtpCode is populated ONLY in driver-facing responses when status=ACTIVE/OVERSTAY
+ *   and the driver has called initiate-checkout.
+ * - Both OTP values are NEVER returned in owner-facing responses.
  */
 @Data
 public class BookingResponse {
@@ -27,14 +28,37 @@ public class BookingResponse {
     private BookingStatus status;
     private LocalDateTime createdAt;
 
-    // ── PRD v1.0 Slice 2 ────────────────────────────────────────────────────
+    // ── Opening OTP (PRD v1.0 Slice 2) ───────────────────────────────────────
 
     /**
-     * 4-digit OTP.  Populated only in driver-facing responses (status = CONFIRMED).
+     * 4-digit opening OTP. Populated only in driver-facing responses (status = CONFIRMED/ACTIVE).
      * Always null in owner-facing responses.
      */
     private String otpCode;
 
-    /** How many incorrect OTP attempts have been made by the owner. */
+    /** How many incorrect opening OTP attempts have been made by the owner. */
     private int otpAttempts;
+
+    // ── Closing OTP (departure confirmation) ─────────────────────────────────
+
+    /**
+     * 4-digit closing OTP. Populated only in driver-facing responses when
+     * status = ACTIVE or OVERSTAY and driver has called initiate-checkout.
+     * Always null in owner-facing responses.
+     */
+    private String closingOtpCode;
+
+    /** How many incorrect closing OTP attempts have been made by the owner. */
+    private int closingOtpAttempts;
+
+    // ── Overstay fields ───────────────────────────────────────────────────────
+
+    /** Timestamp when OVERSTAY began (= scheduled endTime). Set by scheduler. */
+    private LocalDateTime overstayStartedAt;
+
+    /** Timestamp of actual physical departure (closing OTP verified → COMPLETED). */
+    private LocalDateTime actualClosedAt;
+
+    /** Extra charge for overstay time (pricePerHour/60 × overstayMinutes). Null if no overstay. */
+    private Double overstayExtraCharge;
 }

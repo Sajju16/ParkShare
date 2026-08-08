@@ -76,4 +76,35 @@ public class BookingController {
                 "OTP verified successfully. Booking is now ACTIVE.",
                 bookingService.verifyOtp(id, request)));
     }
+
+    // ── Closing OTP (departure confirmation) – v1.1 ──────────────────────────
+
+    /**
+     * Driver signals they are ready to leave the parking space.
+     * Generates a 4-digit closing OTP and returns it to the driver.
+     * Booking must be ACTIVE or OVERSTAY.
+     */
+    @PostMapping("/{id}/initiate-checkout")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> initiateCheckout(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Checkout initiated. Show your closing OTP to the parking owner.",
+                bookingService.initiateCheckout(id)));
+    }
+
+    /**
+     * Owner submits the closing OTP the departing driver shows them.
+     * On success: booking transitions ACTIVE/OVERSTAY → COMPLETED.
+     *             Overstay extra charge calculated if applicable.
+     * On failure: closingOtpAttempts counter incremented; locked after 3 failures.
+     */
+    @PutMapping("/{id}/verify-closing-otp")
+    @PreAuthorize("hasRole('OWNER')")
+    public ResponseEntity<ApiResponse<BookingResponse>> verifyClosingOtp(
+            @PathVariable Long id,
+            @Valid @RequestBody OtpVerificationRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Closing OTP verified. Booking is now COMPLETED. Space has been released.",
+                bookingService.verifyClosingOtp(id, request)));
+    }
 }

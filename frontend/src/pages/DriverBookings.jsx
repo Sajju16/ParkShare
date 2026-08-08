@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { Clock, CheckCircle, XCircle, AlertCircle, Key } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertCircle, Key, LogOut, AlertTriangle, DollarSign } from 'lucide-react';
 
 const StatusBadge = ({ status }) => {
     switch(status) {
@@ -13,6 +13,8 @@ const StatusBadge = ({ status }) => {
             return <span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold"><CheckCircle size={14}/> Confirmed</span>;
         case 'ACTIVE':
             return <span className="flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-bold"><Key size={14}/> Active</span>;
+        case 'OVERSTAY':
+            return <span className="flex items-center gap-1 px-3 py-1 bg-red-200 text-red-900 rounded-full text-xs font-bold"><AlertTriangle size={14}/> Overstay</span>;
         case 'CANCELLED':
             return <span className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold"><XCircle size={14}/> Cancelled</span>;
         case 'REJECTED':
@@ -30,6 +32,112 @@ const StatusBadge = ({ status }) => {
     }
 };
 
+// ── Closing OTP / Checkout Panel (driver-facing) ─────────────────────────────
+
+const CheckoutPanel = ({ booking, onSuccess }) => {
+    const [loading, setLoading] = useState(false);
+
+    const handleInitiateCheckout = async () => {
+        setLoading(true);
+        try {
+            const res = await api.post(`/bookings/${booking.id}/initiate-checkout`);
+            if (res.success) onSuccess();
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to initiate checkout.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Closing OTP already generated — show it
+    if (booking.closingOtpCode) {
+        return (
+            <div className="mt-2 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-300 rounded-xl p-4 flex items-center gap-4">
+                <div className="p-3 bg-orange-100 rounded-full">
+                    <LogOut size={24} className="text-orange-600" />
+                </div>
+                <div>
+                    <p className="text-xs text-orange-700 font-semibold uppercase tracking-wider mb-1">
+                        Your Closing OTP (Departure)
+                    </p>
+                    <p className="text-4xl font-mono font-extrabold text-orange-800 tracking-[0.3em] leading-none">
+                        {booking.closingOtpCode}
+                    </p>
+                    <p className="text-sm text-orange-600 mt-2">
+                        Show this OTP to the parking owner to confirm your departure.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    // Checkout not yet initiated — show button
+    return (
+        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between gap-4">
+            <div>
+                <p className="text-sm font-semibold text-gray-700">Ready to leave?</p>
+                <p className="text-xs text-gray-500 mt-1">Click the button to generate your closing OTP and confirm departure with the owner.</p>
+            </div>
+            <button
+                onClick={handleInitiateCheckout}
+                disabled={loading}
+                className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-bold transition whitespace-nowrap flex items-center gap-2"
+            >
+                <LogOut size={16} />
+                {loading ? 'Processing...' : "I'm Ready to Leave"}
+            </button>
+        </div>
+    );
+};
+
+// ── Overstay extra charge display ────────────────────────────────────────────
+
+const OverstayChargeDisplay = ({ booking }) => {
+    const [liveMinutes, setLiveMinutes] = useState(0);
+
+    useEffect(() => {
+        if (!booking.overstayStartedAt) return;
+        const update = () => {
+            const started = new Date(booking.overstayStartedAt);
+            const now = new Date();
+            const minutes = Math.max(0, Math.floor((now - started) / 60000));
+            setLiveMinutes(minutes);
+        };
+        update();
+        const interval = setInterval(update, 60000); // update every minute
+        return () => clearInterval(interval);
+    }, [booking.overstayStartedAt]);
+
+    if (!booking.overstayStartedAt) return null;
+
+    const ratePerMinute = (booking.totalPrice / 60); // approximate per-minute rate
+    const liveCharge = (liveMinutes * (booking.totalPrice / 60)).toFixed(2);
+
+    return (
+        <div className="mt-2 bg-red-50 border border-red-300 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={16} className="text-red-600" />
+                <p className="text-sm font-bold text-red-800">Overstay Charges Accumulating</p>
+            </div>
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs text-red-600">
+                        Overstay since: <strong>{new Date(booking.overstayStartedAt).toLocaleTimeString([], { timeStyle: 'short' })}</strong>
+                    </p>
+                    <p className="text-xs text-red-600">
+                        Duration: <strong>{liveMinutes} min</strong>
+                    </p>
+                </div>
+                <div className="text-right">
+                    <p className="text-xs text-red-500 uppercase tracking-wide">Live Extra Charge</p>
+                    <p className="text-2xl font-extrabold text-red-700">${liveCharge}</p>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
 
 const DriverBookings = () => {
     const [bookings, setBookings] = useState([]);
@@ -146,11 +254,14 @@ const DriverBookings = () => {
 
     const now = new Date();
     const TERMINAL_STATUSES = ['CANCELLED', 'REJECTED', 'AUTO_REJECTED', 'PAYMENT_EXPIRED', 'COMPLETED', 'NO_SHOW'];
+
+    // OVERSTAY bookings are always "upcoming" (space still physically occupied)
     const upcomingBookings = bookings.filter(b =>
-        new Date(b.endTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'ACTIVE'].includes(b.status)
+        ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'ACTIVE', 'OVERSTAY'].includes(b.status) &&
+        (new Date(b.endTime) > now || b.status === 'OVERSTAY')
     );
     const pastBookings = bookings.filter(b =>
-        new Date(b.endTime) <= now || TERMINAL_STATUSES.includes(b.status)
+        new Date(b.endTime) <= now && TERMINAL_STATUSES.includes(b.status)
     );
 
     const renderBookingCard = (booking, isUpcoming) => (
@@ -170,14 +281,21 @@ const DriverBookings = () => {
                         </div>
                         <div className="w-px h-8 bg-gray-300"></div>
                         <div>
-                            <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">End</p>
+                            <p className="text-gray-500 text-xs uppercase tracking-wider mb-1">Scheduled End</p>
                             <p className="font-semibold">{new Date(booking.endTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex flex-col items-end w-full md:w-auto gap-3">
-                    <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
+                    <div className="text-right">
+                        <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
+                        {booking.overstayExtraCharge > 0 && (
+                            <p className="text-sm text-red-600 font-semibold flex items-center gap-1 justify-end">
+                                <DollarSign size={12}/> +${booking.overstayExtraCharge.toFixed(2)} overstay
+                            </p>
+                        )}
+                    </div>
 
                     {booking.status === 'AWAITING_PAYMENT' && (
                         <button
@@ -189,7 +307,7 @@ const DriverBookings = () => {
                         </button>
                     )}
 
-                    {['CONFIRMED', 'COMPLETED', 'ACTIVE'].includes(booking.status) && (
+                    {['CONFIRMED', 'COMPLETED', 'ACTIVE', 'OVERSTAY'].includes(booking.status) && (
                         <button
                             onClick={() => downloadReceipt(booking.id)}
                             className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition w-full md:w-auto shadow-sm border border-gray-300"
@@ -209,7 +327,7 @@ const DriverBookings = () => {
                 </div>
             </div>
 
-            {/* PRD v1.0 Slice 2: OTP display — CONFIRMED bookings only, visible to driver */}
+            {/* Opening OTP — CONFIRMED bookings, visible to driver */}
             {booking.status === 'CONFIRMED' && booking.otpCode && (
                 <div className="mt-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-xl p-4 flex items-center gap-4">
                     <div className="p-3 bg-green-100 rounded-full">
@@ -217,7 +335,7 @@ const DriverBookings = () => {
                     </div>
                     <div>
                         <p className="text-xs text-green-700 font-semibold uppercase tracking-wider mb-1">
-                            Your Parking OTP
+                            Your Parking OTP (Arrival)
                         </p>
                         <p className="text-4xl font-mono font-extrabold text-green-800 tracking-[0.3em] leading-none">
                             {booking.otpCode}
@@ -226,6 +344,50 @@ const DriverBookings = () => {
                             Show this OTP to the parking owner when you arrive.
                         </p>
                     </div>
+                </div>
+            )}
+
+            {/* ACTIVE: show checkout panel + opening OTP still visible */}
+            {booking.status === 'ACTIVE' && (
+                <>
+                    {booking.otpCode && (
+                        <div className="mt-2 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-xl p-3 flex items-center gap-3">
+                            <Key size={18} className="text-green-600 flex-shrink-0" />
+                            <div>
+                                <p className="text-xs text-green-700 font-semibold">Arrival OTP: <span className="font-mono text-lg text-green-800">{booking.otpCode}</span></p>
+                                <p className="text-xs text-green-500">You are currently parked.</p>
+                            </div>
+                        </div>
+                    )}
+                    <CheckoutPanel booking={booking} onSuccess={fetchBookings} />
+                </>
+            )}
+
+            {/* OVERSTAY: show overstay charges + checkout panel */}
+            {booking.status === 'OVERSTAY' && (
+                <>
+                    <OverstayChargeDisplay booking={booking} />
+                    <CheckoutPanel booking={booking} onSuccess={fetchBookings} />
+                </>
+            )}
+
+            {/* COMPLETED: show final overstay charge if any */}
+            {booking.status === 'COMPLETED' && booking.overstayExtraCharge > 0 && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                        <DollarSign size={16} className="text-amber-600" />
+                        <p className="text-sm font-bold text-amber-800">Overstay Charge Applied</p>
+                    </div>
+                    <p className="text-xs text-amber-700">
+                        Original booking: <strong>${booking.totalPrice.toFixed(2)}</strong> +
+                        Overstay: <strong>${booking.overstayExtraCharge.toFixed(2)}</strong> =
+                        Total: <strong>${(booking.totalPrice + booking.overstayExtraCharge).toFixed(2)}</strong>
+                    </p>
+                    {booking.actualClosedAt && (
+                        <p className="text-xs text-amber-600 mt-1">
+                            Departed: {new Date(booking.actualClosedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </p>
+                    )}
                 </div>
             )}
         </div>

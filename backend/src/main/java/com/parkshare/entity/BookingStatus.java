@@ -1,16 +1,18 @@
 package com.parkshare.entity;
 
 /**
- * PRD v1.0 booking lifecycle.
+ * ParkShare booking lifecycle.
  *
  * PENDING          – Driver requested, awaiting owner response.
  * AWAITING_PAYMENT – Owner accepted; driver must pay within 10 minutes.
- * CONFIRMED        – Payment complete; OTP generated (future slice).
- * ACTIVE           – Driver has entered the space (OTP verified – future slice).
- * COMPLETED        – Booking end-time reached; session closed automatically (scheduler – future slice).
+ * CONFIRMED        – Payment complete; opening OTP generated. Driver must present OTP on arrival.
+ * ACTIVE           – Driver has entered the space (opening OTP verified by owner).
+ * OVERSTAY         – Scheduled endTime has passed but closing OTP has NOT been verified.
+ *                    The space is still physically occupied. Extra charges accumulate.
+ * COMPLETED        – Driver confirmed departure via closing OTP. Space is released.
  * REJECTED         – Owner manually rejected the request.
- * AUTO_REJECTED    – Owner did not respond within 5 minutes (scheduler – future slice).
- * PAYMENT_EXPIRED  – Driver did not complete payment within 10 minutes (scheduler – future slice).
+ * AUTO_REJECTED    – Owner did not respond within 5 minutes (scheduler).
+ * PAYMENT_EXPIRED  – Driver did not complete payment within 10 minutes (scheduler).
  * CANCELLED        – Cancelled by driver or owner before the session started.
  * NO_SHOW          – Driver never arrived after booking was CONFIRMED (scheduler – future slice).
  */
@@ -19,6 +21,7 @@ public enum BookingStatus {
     AWAITING_PAYMENT,
     CONFIRMED,
     ACTIVE,
+    OVERSTAY,
     COMPLETED,
     REJECTED,
     AUTO_REJECTED,

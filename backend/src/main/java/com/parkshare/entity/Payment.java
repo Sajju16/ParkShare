@@ -31,4 +31,12 @@ public class Payment extends BaseEntity {
 
     @Column(nullable = false)
     private String status; // CREATED, SUCCESS, FAILED
+
+    /**
+     * Extra charge accumulated during an overstay period.
+     * Calculated at closing OTP verification time and appended to the
+     * existing payment record.  Does not trigger a new Razorpay order in v1.0.
+     */
+    @Column(name = "overstay_amount", columnDefinition = "DOUBLE DEFAULT 0.0")
+    private Double overstayAmount = 0.0;
 }
