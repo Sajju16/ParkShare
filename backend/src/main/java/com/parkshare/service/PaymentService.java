@@ -66,17 +66,22 @@ public class PaymentService {
         }
 
         try {
-            RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
+            String orderId;
+            if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                orderId = "order_mock_" + System.currentTimeMillis();
+            } else {
+                RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
 
-            JSONObject orderRequest = new JSONObject();
-            // Razorpay amount is in paise (multiply by 100)
-            int amountInPaise = (int) (booking.getTotalPrice() * 100);
-            orderRequest.put("amount", amountInPaise); 
-            orderRequest.put("currency", "USD");
-            orderRequest.put("receipt", "txn_" + booking.getId());
+                JSONObject orderRequest = new JSONObject();
+                // Razorpay amount is in paise (multiply by 100)
+                int amountInPaise = (int) (booking.getTotalPrice() * 100);
+                orderRequest.put("amount", amountInPaise); 
+                orderRequest.put("currency", "USD");
+                orderRequest.put("receipt", "txn_" + booking.getId());
 
-            Order order = razorpay.orders.create(orderRequest);
-            String orderId = order.get("id");
+                Order order = razorpay.orders.create(orderRequest);
+                orderId = order.get("id");
+            }
 
             Payment payment = existingPayment.orElse(new Payment());
             payment.setBooking(booking);
@@ -107,12 +112,17 @@ public class PaymentService {
                 .orElseThrow(() -> new RuntimeException("Payment order not found"));
 
         try {
-            JSONObject options = new JSONObject();
-            options.put("razorpay_order_id", request.getRazorpayOrderId());
-            options.put("razorpay_payment_id", request.getRazorpayPaymentId());
-            options.put("razorpay_signature", request.getRazorpaySignature());
+            boolean isValid;
+            if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                isValid = true;
+            } else {
+                JSONObject options = new JSONObject();
+                options.put("razorpay_order_id", request.getRazorpayOrderId());
+                options.put("razorpay_payment_id", request.getRazorpayPaymentId());
+                options.put("razorpay_signature", request.getRazorpaySignature());
 
-            boolean isValid = Utils.verifyPaymentSignature(options, razorpayKeySecret);
+                isValid = Utils.verifyPaymentSignature(options, razorpayKeySecret);
+            }
 
             if (isValid) {
                 payment.setRazorpayPaymentId(request.getRazorpayPaymentId());

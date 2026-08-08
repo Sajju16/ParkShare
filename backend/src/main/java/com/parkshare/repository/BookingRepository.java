@@ -14,7 +14,7 @@ import java.util.List;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     @Query("SELECT COUNT(b) > 0 FROM Booking b WHERE b.parkingSpace.id = :spaceId " +
-           "AND b.status = 'CONFIRMED' " +
+           "AND b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, com.parkshare.entity.BookingStatus.ACTIVE) " +
            "AND b.startTime < :endTime AND b.endTime > :startTime")
     boolean existsOverlappingBooking(@Param("spaceId") Long spaceId,
                                      @Param("startTime") LocalDateTime startTime,
@@ -25,7 +25,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByParkingSpaceOwnerIdOrderByStartTimeDesc(Long ownerId);
 
     @Query("SELECT b FROM Booking b WHERE b.parkingSpace.owner.id = :ownerId " +
-           "AND b.status = 'CONFIRMED' " +
+           "AND b.status IN (com.parkshare.entity.BookingStatus.CONFIRMED, com.parkshare.entity.BookingStatus.ACTIVE) " +
            "AND b.startTime <= :endOfDay AND b.endTime >= :startOfDay")
     List<Booking> findActiveBookingsForOwnerByDate(@Param("ownerId") Long ownerId,
                                                    @Param("startOfDay") LocalDateTime startOfDay,

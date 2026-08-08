@@ -74,6 +74,21 @@ const DriverBookings = () => {
             const orderRes = await api.post(`/payments/create-order/${bookingId}`);
             if (orderRes.success) {
                 const { razorpayOrderId, amount, currency, keyId } = orderRes.data;
+
+                // Mock Mode check for dev/test environment with dummy keys
+                if (keyId === 'rzp_test_placeholder') {
+                    const verifyRes = await api.post('/payments/verify', {
+                        razorpayOrderId: razorpayOrderId,
+                        razorpayPaymentId: 'pay_mock_' + Date.now(),
+                        razorpaySignature: 'mock_signature'
+                    });
+                    if (verifyRes.success) {
+                        alert("Payment successful (Test Mock)! Your booking is now confirmed. Check your OTP below.");
+                        fetchBookings();
+                    }
+                    return;
+                }
+
                 const options = {
                     key: keyId,
                     amount: amount * 100,
@@ -132,10 +147,10 @@ const DriverBookings = () => {
     const now = new Date();
     const TERMINAL_STATUSES = ['CANCELLED', 'REJECTED', 'AUTO_REJECTED', 'PAYMENT_EXPIRED', 'COMPLETED', 'NO_SHOW'];
     const upcomingBookings = bookings.filter(b =>
-        new Date(b.startTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'ACTIVE'].includes(b.status)
+        new Date(b.endTime) > now && ['PENDING', 'AWAITING_PAYMENT', 'CONFIRMED', 'ACTIVE'].includes(b.status)
     );
     const pastBookings = bookings.filter(b =>
-        new Date(b.startTime) <= now || TERMINAL_STATUSES.includes(b.status)
+        new Date(b.endTime) <= now || TERMINAL_STATUSES.includes(b.status)
     );
 
     const renderBookingCard = (booking, isUpcoming) => (
