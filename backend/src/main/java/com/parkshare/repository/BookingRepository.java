@@ -36,6 +36,29 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                                      @Param("startTime") LocalDateTime startTime,
                                      @Param("endTime") LocalDateTime endTime);
 
+    // ── Live occupancy status ─────────────────────────────────────────────────
+
+    /**
+     * Returns the "live" occupancy status of a parking space.
+     * A space is considered occupied if it has any booking in
+     * CONFIRMED, ACTIVE, or OVERSTAY status.
+     *
+     * Used by the public space detail and search APIs to surface real-time
+     * availability to browsing drivers — without exposing any private booking data.
+     *
+     * @param spaceId the ID of the parking space
+     * @return the active BookingStatus (CONFIRMED / ACTIVE / OVERSTAY), or empty if free
+     */
+    @Query("SELECT b.status FROM Booking b " +
+           "WHERE b.parkingSpace.id = :spaceId " +
+           "AND b.status IN (" +
+           "  com.parkshare.entity.BookingStatus.CONFIRMED, " +
+           "  com.parkshare.entity.BookingStatus.ACTIVE, " +
+           "  com.parkshare.entity.BookingStatus.OVERSTAY" +
+           ") " +
+           "ORDER BY b.startTime DESC")
+    java.util.Optional<BookingStatus> findCurrentOccupancyStatus(@Param("spaceId") Long spaceId);
+
     // ── Basic fetch queries ───────────────────────────────────────────────────
 
     List<Booking> findByDriverIdOrderByStartTimeDesc(Long driverId);

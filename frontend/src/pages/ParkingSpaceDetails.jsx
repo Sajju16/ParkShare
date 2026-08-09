@@ -28,6 +28,44 @@ const getTomorrowMax = () => {
     return local.toISOString().slice(0, 16);
 };
 
+// ─── v1.1: Occupancy helpers ─────────────────────────────────────────────────
+
+/**
+ * Returns true if the space is currently occupied (CONFIRMED / ACTIVE / OVERSTAY).
+ */
+const isSpaceOccupied = (currentOccupancyStatus) =>
+    currentOccupancyStatus === 'CONFIRMED' ||
+    currentOccupancyStatus === 'ACTIVE' ||
+    currentOccupancyStatus === 'OVERSTAY';
+
+/**
+ * Returns a human-readable occupancy message and severity level.
+ */
+const getOccupancyInfo = (currentOccupancyStatus) => {
+    switch (currentOccupancyStatus) {
+        case 'OVERSTAY':
+            return {
+                label: '🔴 Currently Occupied — Overstay in Progress',
+                detail: 'The current driver has exceeded their booking time and has not yet completed checkout. This space will be released only after the driver completes the Closing OTP process.',
+                color: 'red',
+            };
+        case 'ACTIVE':
+            return {
+                label: '🔴 Currently Occupied — Driver is Parked',
+                detail: 'A driver is currently using this space. It will become available after they complete their checkout.',
+                color: 'red',
+            };
+        case 'CONFIRMED':
+            return {
+                label: '🟡 Reserved — Awaiting Driver Arrival',
+                detail: 'This space has an upcoming confirmed booking. Please choose a different time slot or check back later.',
+                color: 'yellow',
+            };
+        default:
+            return null;
+    }
+};
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const ParkingSpaceDetails = () => {
@@ -75,6 +113,12 @@ const ParkingSpaceDetails = () => {
             return;
         }
 
+        // ── v1.1: Block booking if space is currently occupied ──────────────
+        if (isSpaceOccupied(space?.currentOccupancyStatus)) {
+            setError('This parking space is currently occupied. Please try again later.');
+            return;
+        }
+
         // ── PRD v1.0 client-side pre-validation ────────────────────────────
         const now = new Date();
         const start = new Date(startTime);
@@ -119,12 +163,38 @@ const ParkingSpaceDetails = () => {
     if (!space) return <div className="p-8 text-center text-gray-500">Loading...</div>;
 
     const totalPrice = calculatePrice();
+    const occupied = isSpaceOccupied(space.currentOccupancyStatus);
+    const occupancyInfo = getOccupancyInfo(space.currentOccupancyStatus);
 
     return (
         <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
             <div className="md:col-span-2 space-y-6">
-                <h1 className="text-4xl font-extrabold text-gray-800">{space.title}</h1>
+                <div className="flex items-start gap-4">
+                    <h1 className="text-4xl font-extrabold text-gray-800 flex-1">{space.title}</h1>
+                    {/* v1.1: Live occupancy badge next to title */}
+                    {occupied ? (
+                        <span className="mt-1 shrink-0 px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-700 border border-red-200">
+                            🔴 Occupied
+                        </span>
+                    ) : (
+                        <span className="mt-1 shrink-0 px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-700 border border-green-200">
+                            🟢 Available
+                        </span>
+                    )}
+                </div>
                 <p className="text-gray-500 text-lg">{space.address}, {space.city} {space.zipCode}</p>
+
+                {/* v1.1: Live occupancy banner */}
+                {occupancyInfo && (
+                    <div className={`rounded-xl p-4 border ${
+                        occupancyInfo.color === 'red'
+                            ? 'bg-red-50 border-red-200 text-red-800'
+                            : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                    }`}>
+                        <p className="font-bold text-base mb-1">{occupancyInfo.label}</p>
+                        <p className="text-sm">{occupancyInfo.detail}</p>
+                    </div>
+                )}
 
                 {space.images?.length > 0 ? (
                     <img src={space.images[0]} alt="Parking Space" className="w-full h-96 object-cover rounded-xl shadow-lg" />
@@ -154,60 +224,118 @@ const ParkingSpaceDetails = () => {
                     <h3 className="text-2xl font-bold text-gray-800 mb-2">${space.pricePerHour} <span className="text-gray-500 text-lg font-normal">/ hour</span></h3>
                     {space.pricePerDay && <p className="text-gray-500 mb-4">${space.pricePerDay} / day</p>}
 
-                    {/* PRD v1.0: Booking window reminder */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
-                        📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
-                    </div>
-
-                    {bookingSuccess ? (
-                        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
-                            Booking confirmed! Redirecting...
+                    {/* v1.1: Occupancy-aware booking panel */}
+                    {occupied ? (
+                        <div className="space-y-4">
+                            <div className={`rounded-lg p-4 text-center ${
+                                space.currentOccupancyStatus === 'OVERSTAY'
+                                    ? 'bg-red-50 border border-red-200'
+                                    : 'bg-orange-50 border border-orange-200'
+                            }`}>
+                                <p className="font-bold text-gray-800 mb-1">
+                                    {space.currentOccupancyStatus === 'OVERSTAY'
+                                        ? '⏰ Overstay In Progress'
+                                        : '🚗 Space is Occupied'}
+                                </p>
+                                <p className="text-sm text-gray-600">
+                                    {space.currentOccupancyStatus === 'OVERSTAY'
+                                        ? 'The space will be released only after the driver completes the Closing OTP checkout.'
+                                        : 'This space is currently in use. Check back later.'}
+                                </p>
+                            </div>
+                            {/* PRD v1.0: Booking window reminder */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                                📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
+                            </div>
+                            <p className="text-xs text-gray-400 text-center">
+                                You can still submit a booking request — it will be queued for when the space becomes available.
+                            </p>
+                            {/* Still allow booking creation so the backend overlap guard handles it */}
+                            <form onSubmit={handleBooking} className="space-y-3 pt-2 border-t border-gray-100">
+                                {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
+                                <div>
+                                    <label className="block text-gray-700 font-medium mb-1 text-sm">Start Time</label>
+                                    <input type="datetime-local" value={startTime} min={minDateTime} max={maxDateTime}
+                                        onChange={(e) => setStartTime(e.target.value)} required
+                                        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                                </div>
+                                <div>
+                                    <label className="block text-gray-700 font-medium mb-1 text-sm">End Time</label>
+                                    <input type="datetime-local" value={endTime} min={startTime || minDateTime} max={maxDateTime}
+                                        onChange={(e) => setEndTime(e.target.value)} required
+                                        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                                </div>
+                                {totalPrice > 0 && (
+                                    <div className="border-t pt-3 flex justify-between items-center font-bold">
+                                        <span className="text-sm">Total</span>
+                                        <span>${totalPrice.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <button type="submit"
+                                    disabled={totalPrice <= 0 || user?.role === 'OWNER'}
+                                    className="w-full bg-gray-500 text-white py-3 rounded-lg font-bold hover:bg-gray-600 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                                    {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Request Anyway (Space Occupied)'}
+                                </button>
+                            </form>
                         </div>
                     ) : (
-                        <form onSubmit={handleBooking} className="space-y-4">
-                            {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
-
-                            <div>
-                                <label className="block text-gray-700 font-medium mb-1">Start Time</label>
-                                <input
-                                    type="datetime-local"
-                                    value={startTime}
-                                    min={minDateTime}
-                                    max={maxDateTime}
-                                    onChange={(e) => setStartTime(e.target.value)}
-                                    required
-                                    className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
+                        <>
+                            {/* PRD v1.0: Booking window reminder */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
+                                📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
                             </div>
 
-                            <div>
-                                <label className="block text-gray-700 font-medium mb-1">End Time</label>
-                                <input
-                                    type="datetime-local"
-                                    value={endTime}
-                                    min={startTime || minDateTime}
-                                    max={maxDateTime}
-                                    onChange={(e) => setEndTime(e.target.value)}
-                                    required
-                                    className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
-                            </div>
-
-                            {totalPrice > 0 && (
-                                <div className="border-t pt-4 mt-4 flex justify-between items-center text-lg font-bold">
-                                    <span>Total</span>
-                                    <span>${totalPrice.toFixed(2)}</span>
+                            {bookingSuccess ? (
+                                <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
+                                    Booking confirmed! Redirecting...
                                 </div>
-                            )}
+                            ) : (
+                                <form onSubmit={handleBooking} className="space-y-4">
+                                    {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
 
-                            <button
-                                type="submit"
-                                disabled={totalPrice <= 0 || !space.available || user?.role === 'OWNER'}
-                                className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Reserve Now'}
-                            </button>
-                        </form>
+                                    <div>
+                                        <label className="block text-gray-700 font-medium mb-1">Start Time</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={startTime}
+                                            min={minDateTime}
+                                            max={maxDateTime}
+                                            onChange={(e) => setStartTime(e.target.value)}
+                                            required
+                                            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-gray-700 font-medium mb-1">End Time</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={endTime}
+                                            min={startTime || minDateTime}
+                                            max={maxDateTime}
+                                            onChange={(e) => setEndTime(e.target.value)}
+                                            required
+                                            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+
+                                    {totalPrice > 0 && (
+                                        <div className="border-t pt-4 mt-4 flex justify-between items-center text-lg font-bold">
+                                            <span>Total</span>
+                                            <span>${totalPrice.toFixed(2)}</span>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="submit"
+                                        disabled={totalPrice <= 0 || !space.available || user?.role === 'OWNER'}
+                                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Reserve Now'}
+                                    </button>
+                                </form>
+                            )}
+                        </>
                     )}
                 </div>
             </div>

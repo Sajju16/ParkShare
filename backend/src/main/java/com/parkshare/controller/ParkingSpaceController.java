@@ -58,6 +58,31 @@ public class ParkingSpaceController {
         return ResponseEntity.ok(ApiResponse.success("Searched spaces", parkingSpaceService.searchSpaces(city, vehicleType)));
     }
 
+    /**
+     * v1.1 — Nearby search endpoint.
+     *
+     * Returns parking spaces sorted by distance from the driver's current location.
+     * Only spaces within {@code radius} km (default 5 km) are returned.
+     * Includes {@code currentOccupancyStatus} so the UI can show live availability.
+     *
+     * Public endpoint — no authentication required.
+     *
+     * @param lat        driver latitude  (required)
+     * @param lng        driver longitude (required)
+     * @param radius     search radius in km (optional, default 5)
+     * @param vehicleType optional vehicle-type filter (BIKE / HATCHBACK / SEDAN / SUV)
+     */
+    @GetMapping("/public/nearby")
+    public ResponseEntity<ApiResponse<List<ParkingSpaceResponse>>> getNearbySpaces(
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(required = false, defaultValue = "5") double radius,
+            @RequestParam(required = false) com.parkshare.entity.VehicleType vehicleType) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Nearby spaces fetched",
+                parkingSpaceService.getNearbySpaces(lat, lng, radius, vehicleType)));
+    }
+
     @PostMapping("/upload-image")
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<String>> uploadImage(@RequestParam("file") MultipartFile file) {

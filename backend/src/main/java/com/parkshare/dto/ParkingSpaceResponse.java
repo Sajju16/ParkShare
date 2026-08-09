@@ -29,4 +29,21 @@ public class ParkingSpaceResponse {
     private boolean evCharging;
     private boolean available;
     private List<String> images;
+
+    // ── v1.1: Live occupancy & proximity ────────────────────────────────────
+
+    /**
+     * Real-time occupancy status derived from active bookings.
+     * Values: null (free), "CONFIRMED", "ACTIVE", "OVERSTAY".
+     * Populated by ParkingSpaceService from BookingRepository.
+     */
+    private String currentOccupancyStatus;
+
+    /**
+     * Distance in kilometres from the requesting driver's location.
+     * Computed server-side when lat/lng query params are provided,
+     * or client-side from the Haversine formula.
+     * Null when location is not available.
+     */
+    private Double distanceKm;
 }
