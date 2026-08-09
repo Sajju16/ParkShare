@@ -61,4 +61,7 @@ public class BookingResponse {
 
     /** Extra charge for overstay time (pricePerHour/60 × overstayMinutes). Null if no overstay. */
     private Double overstayExtraCharge;
+
+    /** Status of the overstay payment: NOT_REQUIRED, PENDING, CREATED, SUCCESS, FAILED. */
+    private String overstayPaymentStatus;
 }

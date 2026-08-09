@@ -235,6 +235,65 @@ const DriverBookings = () => {
         }
     };
 
+    const handleOverstayPayment = async (bookingId) => {
+        setIsProcessingPayment(true);
+        try {
+            const orderRes = await api.post(`/payments/overstay/create-order/${bookingId}`);
+            if (orderRes.success) {
+                const { razorpayOrderId, amount, currency, keyId } = orderRes.data;
+
+                // Mock Mode check for dev/test environment with dummy keys
+                if (keyId === 'rzp_test_placeholder') {
+                    const verifyRes = await api.post('/payments/overstay/verify', {
+                        razorpayOrderId: razorpayOrderId,
+                        razorpayPaymentId: 'pay_mock_overstay_' + Date.now(),
+                        razorpaySignature: 'mock_signature'
+                    });
+                    if (verifyRes.success) {
+                        alert("Overstay Payment successful (Test Mock)! Payment Status is now PAID.");
+                        fetchBookings();
+                    }
+                    return;
+                }
+
+                const options = {
+                    key: keyId,
+                    amount: amount * 100,
+                    currency: currency,
+                    name: 'ParkShare',
+                    description: 'Overstay Charge Payment',
+                    order_id: razorpayOrderId,
+                    handler: async function (response) {
+                        try {
+                            const verifyRes = await api.post('/payments/overstay/verify', {
+                                razorpayOrderId: response.razorpay_order_id,
+                                razorpayPaymentId: response.razorpay_payment_id,
+                                razorpaySignature: response.razorpay_signature
+                            });
+                            if (verifyRes.success) {
+                                alert("Overstay Payment successful! Payment Status is now PAID.");
+                                fetchBookings();
+                            }
+                        } catch (err) {
+                            alert("Overstay payment verification failed.");
+                        }
+                    },
+                    prefill: { name: 'Driver', email: 'driver@example.com' },
+                    theme: { color: '#2563eb' }
+                };
+                const rzp = new window.Razorpay(options);
+                rzp.on('payment.failed', function (response) {
+                    alert("Overstay payment failed: " + response.error.description);
+                });
+                rzp.open();
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || "Failed to initiate overstay payment.");
+        } finally {
+            setIsProcessingPayment(false);
+        }
+    };
+
     const downloadReceipt = async (bookingId) => {
         try {
             const response = await api.get(`/payments/receipt/booking/${bookingId}`, { responseType: 'blob' });
@@ -371,21 +430,72 @@ const DriverBookings = () => {
                 </>
             )}
 
-            {/* COMPLETED: show final overstay charge if any */}
-            {booking.status === 'COMPLETED' && booking.overstayExtraCharge > 0 && (
-                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <div className="flex items-center gap-2 mb-1">
-                        <DollarSign size={16} className="text-amber-600" />
-                        <p className="text-sm font-bold text-amber-800">Overstay Charge Applied</p>
+            {/* COMPLETED: show final overstay charge and payment settlement status */}
+            {booking.status === 'COMPLETED' && (
+                <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-gray-700">Original Booking Amount:</span>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-800">${booking.totalPrice.toFixed(2)}</span>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
+                                <CheckCircle size={12}/> PAID ✓
+                            </span>
+                        </div>
                     </div>
-                    <p className="text-xs text-amber-700">
-                        Original booking: <strong>${booking.totalPrice.toFixed(2)}</strong> +
-                        Overstay: <strong>${booking.overstayExtraCharge.toFixed(2)}</strong> =
-                        Total: <strong>${(booking.totalPrice + booking.overstayExtraCharge).toFixed(2)}</strong>
-                    </p>
+
+                    {booking.overstayExtraCharge > 0 ? (
+                        <>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-semibold text-gray-700">Overstay Amount:</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-red-600">${booking.overstayExtraCharge.toFixed(2)}</span>
+                                    {booking.overstayPaymentStatus === 'SUCCESS' || booking.overstayPaymentStatus === 'PAID' ? (
+                                        <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
+                                            <CheckCircle size={12}/> PAID ✓
+                                        </span>
+                                    ) : (
+                                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-bold flex items-center gap-1">
+                                            <AlertTriangle size={12}/> PAYMENT PENDING ⚠️
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
+                                <span className="text-base font-bold text-gray-800">Final Amount:</span>
+                                <span className="text-lg font-extrabold text-blue-600">
+                                    ${(booking.totalPrice + booking.overstayExtraCharge).toFixed(2)}
+                                </span>
+                            </div>
+
+                            {/* Show Pay Overstay button ONLY if overstay payment is pending */}
+                            {(booking.overstayPaymentStatus === 'PENDING' || booking.overstayPaymentStatus === 'CREATED' || booking.overstayPaymentStatus === 'FAILED' || !booking.overstayPaymentStatus) && (
+                                <div className="pt-2 flex justify-end">
+                                    <button
+                                        onClick={() => handleOverstayPayment(booking.id)}
+                                        disabled={isProcessingPayment}
+                                        className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition shadow-sm flex items-center gap-2"
+                                    >
+                                        <DollarSign size={16} />
+                                        {isProcessingPayment ? "Processing..." : `Pay Overstay $${booking.overstayExtraCharge.toFixed(2)}`}
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
+                            <span className="text-base font-bold text-gray-800">Final Amount:</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-lg font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</span>
+                                <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
+                                    <CheckCircle size={12}/> Payment Status: PAID ✓
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
                     {booking.actualClosedAt && (
-                        <p className="text-xs text-amber-600 mt-1">
-                            Departed: {new Date(booking.actualClosedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        <p className="text-xs text-gray-500 pt-1">
+                            Actual Departure: {new Date(booking.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                         </p>
                     )}
                 </div>

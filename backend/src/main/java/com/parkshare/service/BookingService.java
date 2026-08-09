@@ -250,12 +250,27 @@ public class BookingService {
                     double extraCharge = Math.round(overstayMinutes * ratePerMinute * 100.0) / 100.0;
                     booking.setOverstayExtraCharge(extraCharge);
 
-                    // Update the existing payment record with overstay amount
+                    // Update the existing payment record with overstay amount and PENDING status
                     paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
                         payment.setOverstayAmount(extraCharge);
+                        payment.setOverstayPaymentStatus("PENDING");
+                        paymentRepository.save(payment);
+                    });
+                } else {
+                    booking.setOverstayExtraCharge(0.0);
+                    paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
+                        payment.setOverstayAmount(0.0);
+                        payment.setOverstayPaymentStatus("NOT_REQUIRED");
                         paymentRepository.save(payment);
                     });
                 }
+            } else {
+                booking.setOverstayExtraCharge(0.0);
+                paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
+                    payment.setOverstayAmount(0.0);
+                    payment.setOverstayPaymentStatus("NOT_REQUIRED");
+                    paymentRepository.save(payment);
+                });
             }
 
             booking = bookingRepository.save(booking);
@@ -547,6 +562,9 @@ public class BookingService {
         r.setOverstayStartedAt(booking.getOverstayStartedAt());
         r.setActualClosedAt(booking.getActualClosedAt());
         r.setOverstayExtraCharge(booking.getOverstayExtraCharge());
+        paymentRepository.findByBookingId(booking.getId()).ifPresent(payment -> {
+            r.setOverstayPaymentStatus(payment.getOverstayPaymentStatus());
+        });
         return r;
     }
 }

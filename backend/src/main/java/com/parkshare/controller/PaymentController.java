@@ -40,6 +40,19 @@ public class PaymentController {
         return ResponseEntity.ok(ApiResponse.success("Payment verified successfully", "SUCCESS"));
     }
 
+    @PostMapping("/overstay/create-order/{bookingId}")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<ApiResponse<PaymentOrderResponse>> createOverstayOrder(@PathVariable Long bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Overstay order created", paymentService.createOverstayRazorpayOrder(bookingId)));
+    }
+
+    @PostMapping("/overstay/verify")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<ApiResponse<String>> verifyOverstayPayment(@Valid @RequestBody PaymentVerificationRequest request) {
+        paymentService.verifyOverstayPayment(request);
+        return ResponseEntity.ok(ApiResponse.success("Overstay payment verified successfully", "SUCCESS"));
+    }
+
     @GetMapping("/receipt/booking/{bookingId}")
     @PreAuthorize("hasRole('DRIVER')")
     public ResponseEntity<byte[]> downloadReceiptByBooking(@PathVariable Long bookingId) {

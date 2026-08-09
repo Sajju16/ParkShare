@@ -245,6 +245,7 @@ const OwnerBookings = () => {
     const confirmedBookings = bookings.filter(b => b.status === 'CONFIRMED');
     const activeBookings = bookings.filter(b => b.status === 'ACTIVE');
     const overstayBookings = bookings.filter(b => b.status === 'OVERSTAY');
+    const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
 
     return (
         <div className="max-w-7xl mx-auto p-6 md:p-8">
@@ -414,6 +415,46 @@ const OwnerBookings = () => {
                                 </div>
                             );
                         })}
+                    </div>
+                </div>
+            )}
+
+            {/* COMPLETED Bookings */}
+            {completedBookings.length > 0 && (
+                <div className="mb-12">
+                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
+                        <CheckCircle size={24} className="text-green-600" /> Completed Bookings
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {completedBookings.map(b => (
+                            <div key={b.id} className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm">
+                                <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
+                                <p className="text-gray-600 text-sm mb-2">Driver: <span className="font-semibold">{b.driverName}</span></p>
+                                <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-1 mb-3">
+                                    <div className="flex justify-between">
+                                        <span>Original Booking:</span>
+                                        <span className="font-semibold text-gray-800">${b.totalPrice.toFixed(2)} (PAID ✓)</span>
+                                    </div>
+                                    {b.overstayExtraCharge > 0 && (
+                                        <div className="flex justify-between">
+                                            <span>Overstay Charge:</span>
+                                            <span className="font-semibold text-red-600">
+                                                ${b.overstayExtraCharge.toFixed(2)} ({b.overstayPaymentStatus === 'SUCCESS' || b.overstayPaymentStatus === 'PAID' ? 'PAID ✓' : 'PENDING ⚠️'})
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between font-bold border-t pt-1">
+                                        <span>Final Amount:</span>
+                                        <span className="text-blue-600">${(b.totalPrice + (b.overstayExtraCharge || 0)).toFixed(2)}</span>
+                                    </div>
+                                </div>
+                                {b.actualClosedAt && (
+                                    <p className="text-xs text-gray-500">
+                                        Closed at: {new Date(b.actualClosedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                                    </p>
+                                )}
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}

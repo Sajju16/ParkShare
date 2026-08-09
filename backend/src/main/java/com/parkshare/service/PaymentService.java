@@ -152,15 +152,136 @@ public class PaymentService {
         }
     }
 
+    // ── PRD v1.1 – Overstay Payment Settlement ───────────────────────────────
+
+    @Transactional
+    public PaymentOrderResponse createOverstayRazorpayOrder(Long bookingId) {
+        User driver = authService.getCurrentUser();
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+
+        if (!booking.getDriver().getId().equals(driver.getId())) {
+            throw new RuntimeException("Unauthorized: You do not own this booking");
+        }
+
+        if (booking.getStatus() != BookingStatus.COMPLETED) {
+            throw new RuntimeException("Overstay payment is only allowed for COMPLETED bookings");
+        }
+
+        Payment payment = paymentRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new RuntimeException("Original payment record not found for this booking"));
+
+        Double overstayAmt = payment.getOverstayAmount();
+        if (overstayAmt == null || overstayAmt <= 0) {
+            throw new RuntimeException("No overstay charge owed for this booking");
+        }
+
+        if ("SUCCESS".equals(payment.getOverstayPaymentStatus()) || "PAID".equals(payment.getOverstayPaymentStatus())) {
+            throw new RuntimeException("Overstay payment already completed for this booking");
+        }
+
+        try {
+            String orderId;
+            if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                orderId = "order_mock_overstay_" + System.currentTimeMillis();
+            } else {
+                RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
+
+                JSONObject orderRequest = new JSONObject();
+                int amountInPaise = (int) (overstayAmt * 100);
+                orderRequest.put("amount", amountInPaise);
+                orderRequest.put("currency", "USD");
+                orderRequest.put("receipt", "overstay_txn_" + booking.getId());
+
+                Order order = razorpay.orders.create(orderRequest);
+                orderId = order.get("id");
+            }
+
+            payment.setOverstayRazorpayOrderId(orderId);
+            payment.setOverstayPaymentStatus("CREATED");
+            payment = paymentRepository.save(payment);
+
+            return PaymentOrderResponse.builder()
+                    .razorpayOrderId(orderId)
+                    .amount(overstayAmt)
+                    .currency("USD")
+                    .keyId(razorpayKeyId)
+                    .paymentId(payment.getId())
+                    .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create overstay Razorpay order: " + e.getMessage());
+        }
+    }
+
+    @Transactional
+    public void verifyOverstayPayment(PaymentVerificationRequest request) {
+        Payment payment = paymentRepository.findByOverstayRazorpayOrderId(request.getRazorpayOrderId())
+                .orElseThrow(() -> new RuntimeException("Overstay payment order not found"));
+
+        User driver = authService.getCurrentUser();
+        if (!payment.getBooking().getDriver().getId().equals(driver.getId())) {
+            throw new RuntimeException("Unauthorized");
+        }
+
+        if ("SUCCESS".equals(payment.getOverstayPaymentStatus())) {
+            return; // Idempotent success
+        }
+
+        try {
+            boolean isValid;
+            if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                isValid = true;
+            } else {
+                JSONObject options = new JSONObject();
+                options.put("razorpay_order_id", request.getRazorpayOrderId());
+                options.put("razorpay_payment_id", request.getRazorpayPaymentId());
+                options.put("razorpay_signature", request.getRazorpaySignature());
+
+                isValid = Utils.verifyPaymentSignature(options, razorpayKeySecret);
+            }
+
+            if (isValid) {
+                payment.setOverstayRazorpayPaymentId(request.getRazorpayPaymentId());
+                payment.setOverstayPaymentStatus("SUCCESS");
+
+                double overstayAmt = payment.getOverstayAmount() != null ? payment.getOverstayAmount() : 0.0;
+                double extraCommission = overstayAmt * COMMISSION_RATE;
+                double extraOwnerEarnings = overstayAmt * (1 - COMMISSION_RATE);
+                payment.setCommission(payment.getCommission() + extraCommission);
+                payment.setOwnerEarnings(payment.getOwnerEarnings() + extraOwnerEarnings);
+
+                paymentRepository.save(payment);
+
+                notificationService.sendNotification(
+                        payment.getBooking().getDriver().getEmail(),
+                        "Overstay Payment Successful",
+                        "Your payment of $" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + " was successful. Thank you!"
+                );
+
+                notificationService.sendNotification(
+                        payment.getBooking().getParkingSpace().getOwner().getEmail(),
+                        "Overstay Payment Received",
+                        "Driver has paid $" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + "."
+                );
+            } else {
+                payment.setOverstayPaymentStatus("FAILED");
+                paymentRepository.save(payment);
+                throw new RuntimeException("Overstay payment signature verification failed");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Overstay payment verification error: " + e.getMessage());
+        }
+    }
+
     public byte[] generateReceipt(Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new RuntimeException("Payment not found"));
-        
+
         User currentUser = authService.getCurrentUser();
         if (!payment.getBooking().getDriver().getId().equals(currentUser.getId())) {
             throw new RuntimeException("Unauthorized to download this receipt");
         }
-        
+
         if (!"SUCCESS".equals(payment.getStatus())) {
             throw new RuntimeException("Cannot generate receipt for uncompleted payment");
         }
@@ -169,36 +290,44 @@ public class PaymentService {
             Document document = new Document();
             PdfWriter.getInstance(document, baos);
             document.open();
-            
+
             Font titleFont = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD);
             Font normalFont = new Font(Font.FontFamily.HELVETICA, 12, Font.NORMAL);
             Font boldFont = new Font(Font.FontFamily.HELVETICA, 12, Font.BOLD);
 
             document.add(new Paragraph("ParkShare - Payment Receipt", titleFont));
             document.add(new Paragraph("\n"));
-            
+
             document.add(new Paragraph("Receipt Number: " + payment.getRazorpayPaymentId(), normalFont));
             document.add(new Paragraph("Date: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), normalFont));
             document.add(new Paragraph("\n"));
-            
+
             document.add(new Paragraph("Driver Details:", boldFont));
             document.add(new Paragraph("Name: " + payment.getBooking().getDriver().getName(), normalFont));
             document.add(new Paragraph("Email: " + payment.getBooking().getDriver().getEmail(), normalFont));
             document.add(new Paragraph("\n"));
-            
+
             document.add(new Paragraph("Booking Details:", boldFont));
             document.add(new Paragraph("Parking Space: " + payment.getBooking().getParkingSpace().getTitle(), normalFont));
             document.add(new Paragraph("Address: " + payment.getBooking().getParkingSpace().getAddress(), normalFont));
             document.add(new Paragraph("Start Time: " + payment.getBooking().getStartTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")), normalFont));
             document.add(new Paragraph("End Time: " + payment.getBooking().getEndTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")), normalFont));
             document.add(new Paragraph("\n"));
-            
+
             document.add(new Paragraph("Payment Summary:", boldFont));
-            document.add(new Paragraph("Total Amount Paid: $" + String.format("%.2f", payment.getAmount()), boldFont));
+            document.add(new Paragraph("Original Booking Paid: $" + String.format("%.2f", payment.getAmount()), normalFont));
+            if (payment.getOverstayAmount() != null && payment.getOverstayAmount() > 0) {
+                document.add(new Paragraph("Overstay Charge: $" + String.format("%.2f", payment.getOverstayAmount()), normalFont));
+                document.add(new Paragraph("Overstay Payment Status: " + payment.getOverstayPaymentStatus(), normalFont));
+                double totalPaid = payment.getAmount() + ("SUCCESS".equals(payment.getOverstayPaymentStatus()) ? payment.getOverstayAmount() : 0.0);
+                document.add(new Paragraph("Total Amount Paid: $" + String.format("%.2f", totalPaid), boldFont));
+            } else {
+                document.add(new Paragraph("Total Amount Paid: $" + String.format("%.2f", payment.getAmount()), boldFont));
+            }
             document.add(new Paragraph("Status: " + payment.getStatus(), normalFont));
-            
+
             document.add(new Paragraph("\n\nThank you for using ParkShare!", normalFont));
-            
+
             document.close();
             return baos.toByteArray();
         } catch (DocumentException | java.io.IOException e) {
