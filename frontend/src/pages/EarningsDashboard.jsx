@@ -44,7 +44,7 @@ const EarningsDashboard = () => {
     };
 
     const handleWithdraw = () => {
-        alert(`Withdraw request for $${totalEarnings.toFixed(2)} submitted successfully! (Simulation)`);
+        alert(`Withdraw request for ₹${totalEarnings.toFixed(2)} submitted successfully! (Simulation)`);
     };
 
     return (
@@ -57,7 +57,7 @@ const EarningsDashboard = () => {
                     <div className="flex justify-between items-start">
                         <div>
                             <p className="text-green-100 uppercase tracking-wider text-sm font-semibold mb-2">Available to Withdraw</p>
-                            <h2 className="text-5xl font-extrabold">${totalEarnings.toFixed(2)}</h2>
+                            <h2 className="text-5xl font-extrabold">₹{totalEarnings.toFixed(2)}</h2>
                         </div>
                         <div className="bg-white/20 p-3 rounded-full"><DollarSign size={32} /></div>
                     </div>
@@ -82,11 +82,11 @@ const EarningsDashboard = () => {
                                         </linearGradient>
                                     </defs>
                                     <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `$${value}`} />
+                                    <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`} />
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                                     <Tooltip 
                                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                        formatter={(value) => [`$${value.toFixed(2)}`, 'Earnings']}
+                                        formatter={(value) => [`₹${value.toFixed(2)}`, 'Earnings']}
                                     />
                                     <Area type="monotone" dataKey="earnings" stroke="#22c55e" strokeWidth={3} fillOpacity={1} fill="url(#colorEarnings)" />
                                 </AreaChart>
@@ -121,9 +121,9 @@ const EarningsDashboard = () => {
                                         {new Date(p.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                                     </td>
                                     <td className="px-6 py-4 text-sm font-mono text-gray-500">{p.razorpayPaymentId}</td>
-                                    <td className="px-6 py-4 text-sm font-medium text-gray-700">${p.amount.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-sm text-red-500">-${p.commission.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-sm font-bold text-green-600">${p.ownerEarnings.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-700">₹{p.amount.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-sm text-red-500">-₹{p.commission.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-sm font-bold text-green-600">₹{p.ownerEarnings.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-center">
                                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                             {p.status}

@@ -17,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/payments")
@@ -70,9 +71,13 @@ public class PaymentController {
     
     @GetMapping("/owner/completed")
     @PreAuthorize("hasRole('OWNER')")
-    public ResponseEntity<ApiResponse<List<Payment>>> getOwnerCompletedPayments() {
+    public ResponseEntity<ApiResponse<List<com.parkshare.dto.PaymentSummaryResponse>>> getOwnerCompletedPayments() {
         Long ownerId = authService.getCurrentUser().getId();
-        List<Payment> payments = paymentRepository.findByBookingParkingSpaceOwnerIdAndStatusOrderByCreatedAtDesc(ownerId, "SUCCESS");
-        return ResponseEntity.ok(ApiResponse.success("Fetched completed payments", payments));
+        List<com.parkshare.dto.PaymentSummaryResponse> summaries =
+                paymentRepository.findByBookingParkingSpaceOwnerIdAndStatusOrderByCreatedAtDesc(ownerId, "SUCCESS")
+                        .stream()
+                        .map(paymentService::mapToSummary)
+                        .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.success("Fetched completed payments", summaries));
     }
 }

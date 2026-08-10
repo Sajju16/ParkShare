@@ -221,8 +221,8 @@ const ParkingSpaceDetails = () => {
 
             <div className="md:col-span-1">
                 <div className="bg-white p-6 rounded-xl shadow-xl sticky top-6 border border-gray-100">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-2">${space.pricePerHour} <span className="text-gray-500 text-lg font-normal">/ hour</span></h3>
-                    {space.pricePerDay && <p className="text-gray-500 mb-4">${space.pricePerDay} / day</p>}
+                    <h3 className="text-2xl font-bold text-gray-800 mb-2">₹{space.pricePerHour} <span className="text-gray-500 text-lg font-normal">/ hour</span></h3>
+                    {space.pricePerDay && <p className="text-gray-500 mb-4">₹{space.pricePerDay} / day</p>}
 
                     {/* v1.1: Occupancy-aware booking panel */}
                     {occupied ? (
@@ -268,7 +268,7 @@ const ParkingSpaceDetails = () => {
                                 {totalPrice > 0 && (
                                     <div className="border-t pt-3 flex justify-between items-center font-bold">
                                         <span className="text-sm">Total</span>
-                                        <span>${totalPrice.toFixed(2)}</span>
+                                        <span>₹{totalPrice.toFixed(2)}</span>
                                     </div>
                                 )}
                                 <button type="submit"
@@ -320,9 +320,9 @@ const ParkingSpaceDetails = () => {
                                     </div>
 
                                     {totalPrice > 0 && (
-                                        <div className="border-t pt-4 mt-4 flex justify-between items-center text-lg font-bold">
-                                            <span>Total</span>
-                                            <span>${totalPrice.toFixed(2)}</span>
+                                        <div className="border-t pt-2 flex justify-between items-center font-bold text-lg">
+                                            <span>Total Price</span>
+                                            <span className="text-blue-600">₹{totalPrice.toFixed(2)}</span>
                                         </div>
                                     )}
 

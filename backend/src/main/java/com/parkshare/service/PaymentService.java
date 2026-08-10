@@ -76,7 +76,7 @@ public class PaymentService {
                 // Razorpay amount is in paise (multiply by 100)
                 int amountInPaise = (int) (booking.getTotalPrice() * 100);
                 orderRequest.put("amount", amountInPaise); 
-                orderRequest.put("currency", "USD");
+                orderRequest.put("currency", "INR");
                 orderRequest.put("receipt", "txn_" + booking.getId());
 
                 Order order = razorpay.orders.create(orderRequest);
@@ -96,7 +96,7 @@ public class PaymentService {
             return PaymentOrderResponse.builder()
                     .razorpayOrderId(orderId)
                     .amount(booking.getTotalPrice())
-                    .currency("USD")
+                    .currency("INR")
                     .keyId(razorpayKeyId)
                     .paymentId(payment.getId())
                     .build();
@@ -140,7 +140,7 @@ public class PaymentService {
                 notificationService.sendNotification(
                     booking.getDriver().getEmail(),
                     "Payment Successful & Booking Confirmed",
-                    "Your payment of $" + booking.getTotalPrice() + " was successful. Your booking for " + booking.getParkingSpace().getTitle() + " is now CONFIRMED."
+                    "Your payment of ₹" + booking.getTotalPrice() + " was successful. Your booking for " + booking.getParkingSpace().getTitle() + " is now CONFIRMED."
                 );
             } else {
                 payment.setStatus("FAILED");
@@ -190,7 +190,7 @@ public class PaymentService {
                 JSONObject orderRequest = new JSONObject();
                 int amountInPaise = (int) (overstayAmt * 100);
                 orderRequest.put("amount", amountInPaise);
-                orderRequest.put("currency", "USD");
+                orderRequest.put("currency", "INR");
                 orderRequest.put("receipt", "overstay_txn_" + booking.getId());
 
                 Order order = razorpay.orders.create(orderRequest);
@@ -204,7 +204,7 @@ public class PaymentService {
             return PaymentOrderResponse.builder()
                     .razorpayOrderId(orderId)
                     .amount(overstayAmt)
-                    .currency("USD")
+                    .currency("INR")
                     .keyId(razorpayKeyId)
                     .paymentId(payment.getId())
                     .build();
@@ -255,13 +255,13 @@ public class PaymentService {
                 notificationService.sendNotification(
                         payment.getBooking().getDriver().getEmail(),
                         "Overstay Payment Successful",
-                        "Your payment of $" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + " was successful. Thank you!"
+                        "Your payment of ₹" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + " was successful. Thank you!"
                 );
 
                 notificationService.sendNotification(
                         payment.getBooking().getParkingSpace().getOwner().getEmail(),
                         "Overstay Payment Received",
-                        "Driver has paid $" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + "."
+                        "Driver has paid ₹" + String.format("%.2f", overstayAmt) + " for overstay at " + payment.getBooking().getParkingSpace().getTitle() + "."
                 );
             } else {
                 payment.setOverstayPaymentStatus("FAILED");
@@ -315,14 +315,24 @@ public class PaymentService {
             document.add(new Paragraph("\n"));
 
             document.add(new Paragraph("Payment Summary:", boldFont));
-            document.add(new Paragraph("Original Booking Paid: $" + String.format("%.2f", payment.getAmount()), normalFont));
+            document.add(new Paragraph("Original Booking Paid: ₹" + String.format("%.2f", payment.getAmount()), normalFont));
+
+            // Actual usage billing breakdown (v1.3)
+            Booking bk = payment.getBooking();
+            if (bk.getActualUsageCharge() != null) {
+                document.add(new Paragraph("Actual Usage Charge: ₹" + String.format("%.2f", bk.getActualUsageCharge()), normalFont));
+                if (bk.getRefundAdjustment() != null && bk.getRefundAdjustment() > 0) {
+                    document.add(new Paragraph("Refund/Adjustment: ₹" + String.format("%.2f", bk.getRefundAdjustment()) + " (Pending — will be processed separately)", normalFont));
+                }
+            }
+
             if (payment.getOverstayAmount() != null && payment.getOverstayAmount() > 0) {
-                document.add(new Paragraph("Overstay Charge: $" + String.format("%.2f", payment.getOverstayAmount()), normalFont));
+                document.add(new Paragraph("Overstay Charge: ₹" + String.format("%.2f", payment.getOverstayAmount()), normalFont));
                 document.add(new Paragraph("Overstay Payment Status: " + payment.getOverstayPaymentStatus(), normalFont));
                 double totalPaid = payment.getAmount() + ("SUCCESS".equals(payment.getOverstayPaymentStatus()) ? payment.getOverstayAmount() : 0.0);
-                document.add(new Paragraph("Total Amount Paid: $" + String.format("%.2f", totalPaid), boldFont));
+                document.add(new Paragraph("Total Amount Paid: ₹" + String.format("%.2f", totalPaid), boldFont));
             } else {
-                document.add(new Paragraph("Total Amount Paid: $" + String.format("%.2f", payment.getAmount()), boldFont));
+                document.add(new Paragraph("Total Amount Paid: ₹" + String.format("%.2f", payment.getAmount()), boldFont));
             }
             document.add(new Paragraph("Status: " + payment.getStatus(), normalFont));
 
@@ -333,5 +343,30 @@ public class PaymentService {
         } catch (DocumentException | java.io.IOException e) {
             throw new RuntimeException("Error generating receipt PDF");
         }
+    }
+
+    /**
+     * Maps a Payment JPA entity to a safe, serializable DTO.
+     * Avoids LazyInitializationException when serializing to JSON.
+     */
+    public com.parkshare.dto.PaymentSummaryResponse mapToSummary(Payment payment) {
+        String spaceTitle = null;
+        try {
+            spaceTitle = payment.getBooking().getParkingSpace().getTitle();
+        } catch (Exception ignored) { }
+
+        return com.parkshare.dto.PaymentSummaryResponse.builder()
+                .id(payment.getId())
+                .bookingId(payment.getBooking().getId())
+                .parkingSpaceTitle(spaceTitle)
+                .razorpayPaymentId(payment.getRazorpayPaymentId())
+                .amount(payment.getAmount())
+                .commission(payment.getCommission())
+                .ownerEarnings(payment.getOwnerEarnings())
+                .status(payment.getStatus())
+                .createdAt(payment.getCreatedAt())
+                .overstayAmount(payment.getOverstayAmount())
+                .overstayPaymentStatus(payment.getOverstayPaymentStatus())
+                .build();
     }
 }

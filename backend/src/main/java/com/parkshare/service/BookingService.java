@@ -242,11 +242,21 @@ public class BookingService {
             booking.setStatus(BookingStatus.COMPLETED);
             booking.setActualClosedAt(closedAt);
 
+            // ── Actual Usage Billing (v1.3) ─────────────────────────────────
+            // Compute actual minutes from booking start to actual closure
+            long actualMinutes = Duration.between(booking.getStartTime(), closedAt).toMinutes();
+            if (actualMinutes < 1) actualMinutes = 1; // minimum 1 minute
+            double ratePerMinute = booking.getParkingSpace().getPricePerHour() / 60.0;
+            double actualCharge = Math.round(actualMinutes * ratePerMinute * 100.0) / 100.0;
+            booking.setActualUsageCharge(actualCharge);
+            // refundAdjustment: positive = overpaid (refund owed); negative = overstay extra
+            double adjustment = Math.round((booking.getTotalPrice() - actualCharge) * 100.0) / 100.0;
+            booking.setRefundAdjustment(adjustment);
+
             // Calculate overstay extra charge (if the booking entered OVERSTAY state)
             if (booking.getOverstayStartedAt() != null) {
                 long overstayMinutes = Duration.between(booking.getOverstayStartedAt(), closedAt).toMinutes();
                 if (overstayMinutes > 0) {
-                    double ratePerMinute = booking.getParkingSpace().getPricePerHour() / 60.0;
                     double extraCharge = Math.round(overstayMinutes * ratePerMinute * 100.0) / 100.0;
                     booking.setOverstayExtraCharge(extraCharge);
 
@@ -281,8 +291,11 @@ public class BookingService {
                     "Your departure from \"" + booking.getParkingSpace().getTitle()
                             + "\" has been confirmed. "
                             + (booking.getOverstayExtraCharge() != null && booking.getOverstayExtraCharge() > 0
-                                ? "An overstay charge of $" + String.format("%.2f", booking.getOverstayExtraCharge()) + " has been recorded."
-                                : "Thank you for using ParkShare!")
+                                ? "An overstay charge of ₹" + String.format("%.2f", booking.getOverstayExtraCharge()) + " has been recorded."
+                                : "Actual usage charge: ₹" + String.format("%.2f", booking.getActualUsageCharge())
+                                  + (booking.getRefundAdjustment() != null && booking.getRefundAdjustment() > 0
+                                      ? " (Refund adjustment: ₹" + String.format("%.2f", booking.getRefundAdjustment()) + " pending)"
+                                      : ". Thank you for using ParkShare!"))
             );
 
             notificationService.sendNotification(
@@ -291,7 +304,7 @@ public class BookingService {
                     "The driver has confirmed departure from \"" + booking.getParkingSpace().getTitle()
                             + "\". The space is now available."
                             + (booking.getOverstayExtraCharge() != null && booking.getOverstayExtraCharge() > 0
-                                ? " Overstay charge: $" + String.format("%.2f", booking.getOverstayExtraCharge()) + "."
+                                ? " Overstay charge: ₹" + String.format("%.2f", booking.getOverstayExtraCharge()) + "."
                                 : "")
             );
 
@@ -565,6 +578,11 @@ public class BookingService {
         paymentRepository.findByBookingId(booking.getId()).ifPresent(payment -> {
             r.setOverstayPaymentStatus(payment.getOverstayPaymentStatus());
         });
+        // Actual usage billing fields (v1.3)
+        r.setActualUsageCharge(booking.getActualUsageCharge());
+        r.setRefundAdjustment(booking.getRefundAdjustment());
+        // Checkout initiated flag (true when driver has called initiate-checkout)
+        r.setCheckoutInitiated(booking.getClosingOtpCode() != null);
         return r;
     }
 }

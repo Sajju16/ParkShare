@@ -3,6 +3,9 @@ import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { Clock, CheckCircle, XCircle, AlertCircle, Key, LogOut, AlertTriangle, DollarSign } from 'lucide-react';
 
+/** Formats a number as an Indian Rupee string: ₹60.00 */
+const formatINR = (amount) => `₹${Number(amount || 0).toFixed(2)}`;
+
 const StatusBadge = ({ status }) => {
     switch(status) {
         case 'PENDING':
@@ -130,7 +133,7 @@ const OverstayChargeDisplay = ({ booking }) => {
                 </div>
                 <div className="text-right">
                     <p className="text-xs text-red-500 uppercase tracking-wide">Live Extra Charge</p>
-                    <p className="text-2xl font-extrabold text-red-700">${liveCharge}</p>
+                    <p className="text-2xl font-extrabold text-red-700">{formatINR(liveCharge)}</p>
                 </div>
             </div>
         </div>
@@ -348,10 +351,10 @@ const DriverBookings = () => {
 
                 <div className="flex flex-col items-end w-full md:w-auto gap-3">
                     <div className="text-right">
-                        <p className="text-2xl font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</p>
+                        <p className="text-2xl font-extrabold text-blue-600">{formatINR(booking.totalPrice)}</p>
                         {booking.overstayExtraCharge > 0 && (
                             <p className="text-sm text-red-600 font-semibold flex items-center gap-1 justify-end">
-                                <DollarSign size={12}/> +${booking.overstayExtraCharge.toFixed(2)} overstay
+                                <DollarSign size={12}/> +{formatINR(booking.overstayExtraCharge)} overstay
                             </p>
                         )}
                     </div>
@@ -430,25 +433,44 @@ const DriverBookings = () => {
                 </>
             )}
 
-            {/* COMPLETED: show final overstay charge and payment settlement status */}
+            {/* COMPLETED: show final settlement including actual usage and refund adjustment */}
             {booking.status === 'COMPLETED' && (
                 <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
                     <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-700">Original Booking Amount:</span>
+                        <span className="text-sm font-semibold text-gray-700">Original Booking Paid:</span>
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-800">${booking.totalPrice.toFixed(2)}</span>
+                            <span className="font-bold text-gray-800">{formatINR(booking.totalPrice)}</span>
                             <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
                                 <CheckCircle size={12}/> PAID ✓
                             </span>
                         </div>
                     </div>
 
+                    {/* Actual usage charge (early checkout billing) */}
+                    {booking.actualUsageCharge != null && (
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-gray-700">Actual Usage Charge:</span>
+                            <span className="font-bold text-blue-700">{formatINR(booking.actualUsageCharge)}</span>
+                        </div>
+                    )}
+
+                    {/* Refund adjustment (early checkout only) */}
+                    {booking.refundAdjustment != null && booking.refundAdjustment > 0.01 && (
+                        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                            <span className="text-sm font-semibold text-blue-800">Refund Adjustment:</span>
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold text-blue-700">+{formatINR(booking.refundAdjustment)}</span>
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">Pending</span>
+                            </div>
+                        </div>
+                    )}
+
                     {booking.overstayExtraCharge > 0 ? (
                         <>
                             <div className="flex items-center justify-between">
                                 <span className="text-sm font-semibold text-gray-700">Overstay Amount:</span>
                                 <div className="flex items-center gap-2">
-                                    <span className="font-bold text-red-600">${booking.overstayExtraCharge.toFixed(2)}</span>
+                                    <span className="font-bold text-red-600">{formatINR(booking.overstayExtraCharge)}</span>
                                     {booking.overstayPaymentStatus === 'SUCCESS' || booking.overstayPaymentStatus === 'PAID' ? (
                                         <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
                                             <CheckCircle size={12}/> PAID ✓
@@ -463,7 +485,7 @@ const DriverBookings = () => {
                             <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
                                 <span className="text-base font-bold text-gray-800">Final Amount:</span>
                                 <span className="text-lg font-extrabold text-blue-600">
-                                    ${(booking.totalPrice + booking.overstayExtraCharge).toFixed(2)}
+                                    {formatINR((booking.totalPrice || 0) + (booking.overstayExtraCharge || 0))}
                                 </span>
                             </div>
 
@@ -476,7 +498,7 @@ const DriverBookings = () => {
                                         className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-bold transition shadow-sm flex items-center gap-2"
                                     >
                                         <DollarSign size={16} />
-                                        {isProcessingPayment ? "Processing..." : `Pay Overstay $${booking.overstayExtraCharge.toFixed(2)}`}
+                                        {isProcessingPayment ? "Processing..." : `Pay Overstay ${formatINR(booking.overstayExtraCharge)}`}
                                     </button>
                                 </div>
                             )}
@@ -485,7 +507,7 @@ const DriverBookings = () => {
                         <div className="border-t border-gray-200 pt-2 flex items-center justify-between">
                             <span className="text-base font-bold text-gray-800">Final Amount:</span>
                             <div className="flex items-center gap-2">
-                                <span className="text-lg font-extrabold text-blue-600">${booking.totalPrice.toFixed(2)}</span>
+                                <span className="text-lg font-extrabold text-blue-600">{formatINR(booking.actualUsageCharge ?? booking.totalPrice)}</span>
                                 <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-bold flex items-center gap-1">
                                     <CheckCircle size={12}/> Payment Status: PAID ✓
                                 </span>

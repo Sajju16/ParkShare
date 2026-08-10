@@ -14,6 +14,9 @@ const locales = { 'en-US': enUS };
 
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
 
+/** Formats a number as an Indian Rupee string: ₹60.00 */
+const formatINR = (amount) => `₹${Number(amount || 0).toFixed(2)}`;
+
 // ── OTP Verification Panel (owner-facing) ────────────────────────────────────
 
 /**
@@ -258,7 +261,7 @@ const OwnerBookings = () => {
                     <div className="p-4 bg-green-100 text-green-600 rounded-lg"><DollarSign size={32} /></div>
                     <div>
                         <p className="text-gray-500 text-sm uppercase tracking-wide">Today's Revenue</p>
-                        <p className="text-3xl font-bold text-gray-800">${stats.todayRevenueEstimate.toFixed(2)}</p>
+                        <p className="text-3xl font-bold text-gray-800">{formatINR(stats.todayRevenueEstimate)}</p>
                     </div>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
@@ -291,7 +294,7 @@ const OwnerBookings = () => {
                                         {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} <br/>to<br/>
                                         {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                     </p>
-                                    <p className="font-bold text-blue-600 mt-2">${b.totalPrice.toFixed(2)}</p>
+                                    <p className="font-bold text-blue-600 mt-2">₹{b.totalPrice.toFixed(2)}</p>
                                 </div>
                                 <div className="flex flex-col gap-3">
                                     <button
@@ -331,7 +334,7 @@ const OwnerBookings = () => {
                                     {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} →{' '}
                                     {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                 </p>
-                                <p className="font-bold text-blue-600 mb-2">${b.totalPrice.toFixed(2)}</p>
+                                <p className="font-bold text-blue-600 mb-2">{formatINR(b.totalPrice)}</p>
                                 {/* Opening OTP panel – OTP value never shown to owner */}
                                 <OtpVerifyPanel booking={b} onSuccess={fetchData} />
                             </div>
@@ -358,8 +361,8 @@ const OwnerBookings = () => {
                                     {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} →{' '}
                                     {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                                 </p>
-                                <p className="font-bold text-blue-600 mb-2">${b.totalPrice.toFixed(2)}</p>
-                                {b.closingOtpAttempts !== undefined && b.closingOtpAttempts >= 0 && !b.closingOtpCode ? (
+                                <p className="font-bold text-blue-600 mb-2">{formatINR(b.totalPrice)}</p>
+                                {!b.checkoutInitiated ? (
                                     <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-600 flex items-center gap-2">
                                         <Key size={14} className="text-gray-400" />
                                         Waiting for driver to initiate departure...
@@ -404,11 +407,11 @@ const OwnerBookings = () => {
                                     <div className="flex items-center justify-between mt-2 mb-3">
                                         <div>
                                             <p className="text-xs text-red-600">Overstay: <strong>{overstayMinutes} min</strong></p>
-                                            <p className="text-xs text-blue-700">Base: ${b.totalPrice.toFixed(2)}</p>
+                                            <p className="text-xs text-blue-700">Base: {formatINR(b.totalPrice)}</p>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-xs text-red-500 uppercase">Extra Charge</p>
-                                            <p className="text-2xl font-extrabold text-red-700">${liveCharge}</p>
+                                            <p className="text-2xl font-extrabold text-red-700">{formatINR(liveCharge)}</p>
                                         </div>
                                     </div>
                                     <ClosingOtpVerifyPanel booking={b} onSuccess={fetchData} />
@@ -433,19 +436,31 @@ const OwnerBookings = () => {
                                 <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-1 mb-3">
                                     <div className="flex justify-between">
                                         <span>Original Booking:</span>
-                                        <span className="font-semibold text-gray-800">${b.totalPrice.toFixed(2)} (PAID ✓)</span>
+                                        <span className="font-semibold text-gray-800">{formatINR(b.totalPrice)} (PAID ✓)</span>
                                     </div>
+                                    {b.actualUsageCharge != null && (
+                                        <div className="flex justify-between">
+                                            <span>Actual Usage Charge:</span>
+                                            <span className="font-semibold text-blue-700">{formatINR(b.actualUsageCharge)}</span>
+                                        </div>
+                                    )}
+                                    {b.refundAdjustment != null && b.refundAdjustment > 0.01 && (
+                                        <div className="flex justify-between text-blue-700">
+                                            <span>Refund Adjustment:</span>
+                                            <span className="font-semibold">+{formatINR(b.refundAdjustment)} (Pending)</span>
+                                        </div>
+                                    )}
                                     {b.overstayExtraCharge > 0 && (
                                         <div className="flex justify-between">
                                             <span>Overstay Charge:</span>
                                             <span className="font-semibold text-red-600">
-                                                ${b.overstayExtraCharge.toFixed(2)} ({b.overstayPaymentStatus === 'SUCCESS' || b.overstayPaymentStatus === 'PAID' ? 'PAID ✓' : 'PENDING ⚠️'})
+                                                {formatINR(b.overstayExtraCharge)} ({b.overstayPaymentStatus === 'SUCCESS' || b.overstayPaymentStatus === 'PAID' ? 'PAID ✓' : 'PENDING ⚠️'})
                                             </span>
                                         </div>
                                     )}
                                     <div className="flex justify-between font-bold border-t pt-1">
                                         <span>Final Amount:</span>
-                                        <span className="text-blue-600">${(b.totalPrice + (b.overstayExtraCharge || 0)).toFixed(2)}</span>
+                                        <span className="text-blue-600">{formatINR(b.actualUsageCharge ?? ((b.totalPrice || 0) + (b.overstayExtraCharge || 0)))}</span>
                                     </div>
                                 </div>
                                 {b.actualClosedAt && (

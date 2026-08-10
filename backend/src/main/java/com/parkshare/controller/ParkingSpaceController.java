@@ -53,34 +53,38 @@ public class ParkingSpaceController {
 
     @GetMapping("/public/search")
     public ResponseEntity<ApiResponse<List<ParkingSpaceResponse>>> searchSpaces(
+            @RequestParam(required = false) String q,
             @RequestParam(required = false) String city,
-            @RequestParam(required = false) com.parkshare.entity.VehicleType vehicleType) {
-        return ResponseEntity.ok(ApiResponse.success("Searched spaces", parkingSpaceService.searchSpaces(city, vehicleType)));
+            @RequestParam(required = false) com.parkshare.entity.VehicleType vehicleType,
+            @RequestParam(required = false) Double minPrice,
+            @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) Boolean covered,
+            @RequestParam(required = false, defaultValue = "ALL") String availability,
+            @RequestParam(required = false) String sortBy) {
+        String searchQuery = (q != null && !q.isBlank()) ? q : city;
+        return ResponseEntity.ok(ApiResponse.success(
+                "Searched spaces",
+                parkingSpaceService.searchSpacesAdvanced(searchQuery, vehicleType, minPrice, maxPrice, covered, availability, sortBy)));
     }
 
     /**
-     * v1.1 — Nearby search endpoint.
-     *
-     * Returns parking spaces sorted by distance from the driver's current location.
-     * Only spaces within {@code radius} km (default 5 km) are returned.
-     * Includes {@code currentOccupancyStatus} so the UI can show live availability.
-     *
-     * Public endpoint — no authentication required.
-     *
-     * @param lat        driver latitude  (required)
-     * @param lng        driver longitude (required)
-     * @param radius     search radius in km (optional, default 5)
-     * @param vehicleType optional vehicle-type filter (BIKE / HATCHBACK / SEDAN / SUV)
+     * v1.1 & v1.3 — Nearby search endpoint with multi-criteria filtering & sorting.
      */
     @GetMapping("/public/nearby")
     public ResponseEntity<ApiResponse<List<ParkingSpaceResponse>>> getNearbySpaces(
             @RequestParam double lat,
             @RequestParam double lng,
             @RequestParam(required = false, defaultValue = "5") double radius,
-            @RequestParam(required = false) com.parkshare.entity.VehicleType vehicleType) {
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) com.parkshare.entity.VehicleType vehicleType,
+            @RequestParam(required = false) Double minPrice,
+            @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) Boolean covered,
+            @RequestParam(required = false, defaultValue = "ALL") String availability,
+            @RequestParam(required = false, defaultValue = "NEAREST") String sortBy) {
         return ResponseEntity.ok(ApiResponse.success(
                 "Nearby spaces fetched",
-                parkingSpaceService.getNearbySpaces(lat, lng, radius, vehicleType)));
+                parkingSpaceService.getNearbySpacesAdvanced(lat, lng, radius, q, vehicleType, minPrice, maxPrice, covered, availability, sortBy)));
     }
 
     @PostMapping("/upload-image")

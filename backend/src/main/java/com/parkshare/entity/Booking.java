@@ -110,4 +110,25 @@ public class Booking extends BaseEntity {
      */
     @Column(name = "overstay_extra_charge")
     private Double overstayExtraCharge;
+
+    // ── Actual Usage Billing (v1.3) ────────────────────────────────────────────
+
+    /**
+     * Actual charge for the real time the driver occupied the space.
+     * Computed at closing OTP verification:
+     *   actualDurationMinutes × (pricePerHour / 60).
+     * For normal completion: may be less than totalPrice (early checkout).
+     * For overstay: equals totalPrice + overstayExtraCharge.
+     */
+    @Column(name = "actual_usage_charge")
+    private Double actualUsageCharge;
+
+    /**
+     * Refund/adjustment amount: totalPrice - actualUsageCharge.
+     * Positive  → driver overpaid (refund owed).
+     * Negative  → driver owes more (covered by overstayExtraCharge separately).
+     * Null      → not yet computed.
+     */
+    @Column(name = "refund_adjustment")
+    private Double refundAdjustment;
 }

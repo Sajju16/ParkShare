@@ -100,9 +100,22 @@ public class ParkingSpaceService {
     }
 
     public List<ParkingSpaceResponse> searchSpaces(String city, VehicleType vehicleType) {
-        return parkingSpaceRepository.searchAvailableSpaces(city, vehicleType)
-                .stream()
+        return searchSpacesAdvanced(city, vehicleType, null, null, null, "ALL", null);
+    }
+
+    /**
+     * v1.3: Advanced search with multi-criteria filtering and sorting.
+     */
+    public List<ParkingSpaceResponse> searchSpacesAdvanced(String q, VehicleType vehicleType,
+                                                            Double minPrice, Double maxPrice,
+                                                            Boolean covered, String availability,
+                                                            String sortBy) {
+        List<ParkingSpace> spaces = parkingSpaceRepository.searchSpacesAdvanced(q, vehicleType, minPrice, maxPrice, covered);
+        
+        return spaces.stream()
                 .map(this::mapToResponse)
+                .filter(resp -> filterByAvailability(resp, availability))
+                .sorted(getComparator(sortBy))
                 .collect(Collectors.toList());
     }
 
@@ -113,32 +126,27 @@ public class ParkingSpaceService {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // v1.1: Nearby search with Haversine distance
+    // v1.1 & v1.3: Nearby search with Haversine distance & v1.3 filters
     // ──────────────────────────────────────────────────────────────────────────
 
-    /**
-     * Returns all available parking spaces within {@code radiusKm} of the
-     * driver's current location, sorted by distance ascending.
-     *
-     * Only spaces that have lat/lng set are included in distance calculations.
-     * Spaces without coordinates are appended at the end (distance = null).
-     *
-     * @param driverLat  driver's current latitude
-     * @param driverLng  driver's current longitude
-     * @param radiusKm   search radius in km (default 5 km if ≤ 0)
-     * @param vehicleType optional vehicle type filter (null = any)
-     * @return list of spaces sorted by distance from driver's location
-     */
     public List<ParkingSpaceResponse> getNearbySpaces(double driverLat, double driverLng,
                                                        double radiusKm, VehicleType vehicleType) {
+        return getNearbySpacesAdvanced(driverLat, driverLng, radiusKm, null, vehicleType, null, null, null, "ALL", "NEAREST");
+    }
+
+    /**
+     * v1.3: Advanced nearby search with location, radius, multi-criteria filters, and sorting.
+     */
+    public List<ParkingSpaceResponse> getNearbySpacesAdvanced(double driverLat, double driverLng,
+                                                               double radiusKm, String q,
+                                                               VehicleType vehicleType, Double minPrice,
+                                                               Double maxPrice, Boolean covered,
+                                                               String availability, String sortBy) {
         double effectiveRadius = radiusKm > 0 ? radiusKm : 5.0;
 
-        // Fetch all available spaces (optionally filtered by vehicle type)
-        List<ParkingSpace> allSpaces = (vehicleType != null)
-                ? parkingSpaceRepository.searchAvailableSpaces(null, vehicleType)
-                : parkingSpaceRepository.findByDeletedFalseAndIsAvailableTrue();
+        List<ParkingSpace> spaces = parkingSpaceRepository.searchSpacesAdvanced(q, vehicleType, minPrice, maxPrice, covered);
 
-        return allSpaces.stream()
+        return spaces.stream()
                 .map(space -> {
                     ParkingSpaceResponse resp = mapToResponse(space);
                     if (space.getLatitude() != null && space.getLongitude() != null) {
@@ -148,13 +156,50 @@ public class ParkingSpaceService {
                     }
                     return resp;
                 })
-                // Include spaces within radius AND spaces with no coordinates (shown last)
-                .filter(resp -> resp.getDistanceKm() == null || resp.getDistanceKm() <= effectiveRadius)
-                // Sort: spaces with distance first (ascending), then no-location spaces
-                .sorted(Comparator.comparingDouble(
-                        (ParkingSpaceResponse r) -> r.getDistanceKm() != null ? r.getDistanceKm() : Double.MAX_VALUE
-                ))
+                .filter(resp -> resp.getDistanceKm() != null && resp.getDistanceKm() <= effectiveRadius)
+                .filter(resp -> filterByAvailability(resp, availability))
+                .sorted(getComparatorWithDistance(sortBy))
                 .collect(Collectors.toList());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Filter & Comparator Helpers
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private boolean filterByAvailability(ParkingSpaceResponse resp, String availability) {
+        if (availability == null || availability.equalsIgnoreCase("ALL") || availability.isBlank()) {
+            return true;
+        }
+        if (availability.equalsIgnoreCase("AVAILABLE")) {
+            return resp.getCurrentOccupancyStatus() == null;
+        }
+        if (availability.equalsIgnoreCase("OCCUPIED")) {
+            return resp.getCurrentOccupancyStatus() != null;
+        }
+        return true;
+    }
+
+    private Comparator<ParkingSpaceResponse> getComparator(String sortBy) {
+        if ("PRICE_ASC".equalsIgnoreCase(sortBy)) {
+            return Comparator.comparing(ParkingSpaceResponse::getPricePerHour, Comparator.nullsLast(Comparator.naturalOrder()));
+        }
+        if ("PRICE_DESC".equalsIgnoreCase(sortBy)) {
+            return Comparator.comparing(ParkingSpaceResponse::getPricePerHour, Comparator.nullsLast(Comparator.reverseOrder()));
+        }
+        return (a, b) -> 0; // Default order
+    }
+
+    private Comparator<ParkingSpaceResponse> getComparatorWithDistance(String sortBy) {
+        if ("PRICE_ASC".equalsIgnoreCase(sortBy)) {
+            return Comparator.comparing(ParkingSpaceResponse::getPricePerHour, Comparator.nullsLast(Comparator.naturalOrder()));
+        }
+        if ("PRICE_DESC".equalsIgnoreCase(sortBy)) {
+            return Comparator.comparing(ParkingSpaceResponse::getPricePerHour, Comparator.nullsLast(Comparator.reverseOrder()));
+        }
+        // Default or NEAREST: distance ascending
+        return Comparator.comparingDouble(
+                (ParkingSpaceResponse r) -> r.getDistanceKm() != null ? r.getDistanceKm() : Double.MAX_VALUE
+        );
     }
 
     // ──────────────────────────────────────────────────────────────────────────

@@ -64,4 +64,26 @@ public class BookingResponse {
 
     /** Status of the overstay payment: NOT_REQUIRED, PENDING, CREATED, SUCCESS, FAILED. */
     private String overstayPaymentStatus;
+
+    // ── Actual Usage Billing (v1.3) ────────────────────────────────────────────
+
+    /**
+     * Actual charge computed at closing OTP time (real minutes used × rate/min).
+     * Null until booking is COMPLETED.
+     */
+    private Double actualUsageCharge;
+
+    /**
+     * totalPrice - actualUsageCharge.
+     * Positive → driver overpaid (refund owed to driver).
+     * Zero/Negative → no refund (overstay or exact match).
+     * Null until booking is COMPLETED.
+     */
+    private Double refundAdjustment;
+
+    /**
+     * True when the driver has called initiate-checkout (closingOtpCode is set).
+     * Used by the Owner UI to decide whether to show the Closing OTP panel.
+     */
+    private boolean checkoutInitiated;
 }
