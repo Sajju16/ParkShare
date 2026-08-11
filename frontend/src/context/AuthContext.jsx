@@ -7,32 +7,35 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Bug Fix #3: Centralize the logout logic into one function used everywhere,
-    // including the API interceptor's custom event
+    // Centralized logout & cleanup logic: operates strictly on the tab-scoped sessionStorage
     const clearAuth = useCallback(() => {
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        // Scrub legacy localStorage keys if present to avoid cross-tab storage pollution
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        // Do NOT set the axios header here — the request interceptor in api.js
-        // reads from localStorage on every request, so clearing localStorage is enough.
         setUser(null);
     }, []);
 
     useEffect(() => {
-        // Restore auth state from localStorage on mount
-        const storedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
+        // Scrub any old legacy localStorage items
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+
+        // Restore auth state from tab-scoped sessionStorage on mount
+        const storedUser = sessionStorage.getItem('user');
+        const token = sessionStorage.getItem('token');
         if (storedUser && token) {
             try {
                 setUser(JSON.parse(storedUser));
             } catch {
-                // Corrupted localStorage — clear it
+                // Corrupted sessionStorage — clear it
                 clearAuth();
             }
         }
         setLoading(false);
 
-        // Bug Fix #2 (frontend side): Listen for the 401 event dispatched by the api interceptor
-        // This ensures AuthContext state is cleared when the token expires mid-session
+        // Listen for the 401 event dispatched by api.js request/response interceptor
         const handleForcedLogout = () => {
             clearAuth();
         };
@@ -44,8 +47,8 @@ export const AuthProvider = ({ children }) => {
         const response = await api.post('/auth/login', { email, password });
         if (response.success) {
             const { token, ...userData } = response.data;
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(userData));
+            sessionStorage.setItem('token', token);
+            sessionStorage.setItem('user', JSON.stringify(userData));
             setUser(userData);
         }
         return response;
@@ -55,14 +58,13 @@ export const AuthProvider = ({ children }) => {
         const response = await api.post('/auth/register', userData);
         if (response.success) {
             const { token, ...data } = response.data;
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(data));
+            sessionStorage.setItem('token', token);
+            sessionStorage.setItem('user', JSON.stringify(data));
             setUser(data);
         }
         return response;
     };
 
-    // Bug Fix #3: Logout now atomically clears all auth state
     const logout = () => {
         clearAuth();
     };

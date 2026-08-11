@@ -8,10 +8,10 @@ const api = axios.create({
     withCredentials: true,
 });
 
-// Request interceptor: always attach the freshest token from localStorage
+// Request interceptor: always attach the freshest token from tab-scoped sessionStorage
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (token) {
             config.headers['Authorization'] = `Bearer ${token}`;
         }
@@ -35,11 +35,13 @@ api.interceptors.response.use(
                 data: error.response.data,
             });
 
-            // Bug Fix #2: If we get a 401 (expired/invalid token), force logout
+            // If we get a 401 (expired/invalid token), force logout for current tab
             if (error.response.status === 401) {
                 const currentPath = window.location.pathname;
                 // Don't redirect if already on auth pages
                 if (currentPath !== '/login' && currentPath !== '/register') {
+                    sessionStorage.removeItem('token');
+                    sessionStorage.removeItem('user');
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
                     delete api.defaults.headers.common['Authorization'];
