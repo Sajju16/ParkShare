@@ -111,6 +111,13 @@ public class PaymentService {
         Payment payment = paymentRepository.findByRazorpayOrderId(request.getRazorpayOrderId())
                 .orElseThrow(() -> new RuntimeException("Payment order not found"));
 
+        // Security: verify the authenticated driver owns this booking — prevents
+        // Driver B from confirming Driver A's payment using a known order ID.
+        User driver = authService.getCurrentUser();
+        if (!payment.getBooking().getDriver().getId().equals(driver.getId())) {
+            throw new RuntimeException("Unauthorized: You do not own this booking");
+        }
+
         try {
             boolean isValid;
             if ("rzp_test_placeholder".equals(razorpayKeyId)) {

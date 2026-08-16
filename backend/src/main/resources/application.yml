@@ -33,8 +33,10 @@ app:
   jwt:
     # FIX 6: JWT secret must be provided via environment variable in production.
     # For local development, a default is provided below — DO NOT use this default in production.
-    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    secret: ${JWT_SECRET}
     expirationMs: ${JWT_EXPIRATION_MS:86400000}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
   cloudinary:
     cloud-name: ${CLOUDINARY_CLOUD_NAME:dummy_cloud}
     api-key: ${CLOUDINARY_API_KEY:dummy_key}

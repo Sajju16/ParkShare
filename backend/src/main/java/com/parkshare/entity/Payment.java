@@ -37,7 +37,7 @@ public class Payment extends BaseEntity {
      * Calculated at closing OTP verification time and appended to the
      * existing payment record.
      */
-    @Column(name = "overstay_amount", columnDefinition = "DOUBLE DEFAULT 0.0")
+    @Column(name = "overstay_amount", columnDefinition = "DOUBLE PRECISION DEFAULT 0.0")
     private Double overstayAmount = 0.0;
 
     /**

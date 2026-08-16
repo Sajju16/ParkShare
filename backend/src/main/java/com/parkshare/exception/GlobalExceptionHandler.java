@@ -1,12 +1,13 @@
-package com.parkshare.exception;
+﻿package com.parkshare.exception;
 
 import com.parkshare.dto.ApiResponse;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,7 +19,6 @@ public class GlobalExceptionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    // Bug Fix #1: Properly handle authentication failures instead of masking as 500
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
         logger.warn("Authentication failed: {}", ex.getMessage());
@@ -67,11 +67,29 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    public ResponseEntity<ApiResponse<Void>> handleValidationAndState(RuntimeException ex) {
+        logger.warn("Business validation error: {}", ex.getMessage());
+        return new ResponseEntity<>(
+            ApiResponse.error(ex.getMessage() != null ? ex.getMessage() : "Invalid request", "BAD_REQUEST"),
+            HttpStatus.BAD_REQUEST
+        );
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDatabaseException(DataAccessException ex) {
+        logger.error("Database error occurred: {}", ex.getMessage(), ex);
+        return new ResponseEntity<>(
+            ApiResponse.error("A database error occurred. Please try again.", "DATABASE_ERROR"),
+            HttpStatus.INTERNAL_SERVER_ERROR
+        );
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Void>> handleRuntimeException(RuntimeException ex) {
         logger.error("Runtime exception: {}", ex.getMessage(), ex);
         return new ResponseEntity<>(
-            ApiResponse.error(ex.getMessage(), "RUNTIME_ERROR"),
+            ApiResponse.error("An unexpected error occurred. Please try again.", "RUNTIME_ERROR"),
             HttpStatus.BAD_REQUEST
         );
     }
@@ -80,7 +98,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleGeneralException(Exception ex) {
         logger.error("Unexpected error: {}", ex.getMessage(), ex);
         return new ResponseEntity<>(
-            ApiResponse.error("An unexpected error occurred: " + ex.getMessage(), "INTERNAL_SERVER_ERROR"),
+            ApiResponse.error("An unexpected error occurred. Please try again.", "INTERNAL_SERVER_ERROR"),
             HttpStatus.INTERNAL_SERVER_ERROR
         );
     }
