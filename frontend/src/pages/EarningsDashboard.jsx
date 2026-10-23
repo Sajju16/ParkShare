@@ -121,7 +121,14 @@ const EarningsDashboard = () => {
                                         {new Date(p.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                                     </td>
                                     <td className="px-6 py-4 text-sm font-mono text-gray-500">{p.razorpayPaymentId}</td>
-                                    <td className="px-6 py-4 text-sm font-medium text-gray-700">₹{p.amount.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-700">
+                                        <div className="font-medium">₹{(p.settledAmount != null ? p.settledAmount : p.amount).toFixed(2)}</div>
+                                        {p.refundAdjustment > 0 && (
+                                            <div className="text-xs text-amber-600 font-normal">
+                                                ₹{p.amount.toFixed(2)} orig. (-₹{p.refundAdjustment.toFixed(2)} refund pending)
+                                            </div>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 text-sm text-red-500">-₹{p.commission.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-sm font-bold text-green-600">₹{p.ownerEarnings.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-center">

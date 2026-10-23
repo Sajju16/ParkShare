@@ -56,6 +56,9 @@ public class BookingResponse {
     /** Timestamp when OVERSTAY began (= scheduled endTime). Set by scheduler. */
     private LocalDateTime overstayStartedAt;
 
+    /** Timestamp when the driver arrived and check-in OTP was verified. */
+    private LocalDateTime actualCheckInAt;
+
     /** Timestamp of actual physical departure (closing OTP verified → COMPLETED). */
     private LocalDateTime actualClosedAt;
 

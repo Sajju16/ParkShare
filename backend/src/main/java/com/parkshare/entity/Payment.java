@@ -51,4 +51,16 @@ public class Payment extends BaseEntity {
 
     @Column(name = "overstay_razorpay_payment_id")
     private String overstayRazorpayPaymentId;
+    /**
+     * Settled usage amount after completion and any early checkout adjustment.
+     * Preserves original amount paid in amount column.
+     */
+    @Column(name = "settled_amount", columnDefinition = "DOUBLE PRECISION DEFAULT 0.0")
+    private Double settledAmount;
+
+    /**
+     * Refund adjustment amount pending platform settlement.
+     */
+    @Column(name = "refund_adjustment", columnDefinition = "DOUBLE PRECISION DEFAULT 0.0")
+    private Double refundAdjustment = 0.0;
 }

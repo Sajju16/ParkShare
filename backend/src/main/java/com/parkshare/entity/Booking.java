@@ -97,6 +97,13 @@ public class Booking extends BaseEntity {
     private LocalDateTime overstayStartedAt;
 
     /**
+     * Timestamp when the owner verified the driver's arrival OTP (CONFIRMED → ACTIVE).
+     * Used as the actual start timestamp for usage billing.
+     */
+    @Column(name = "actual_check_in_at")
+    private LocalDateTime actualCheckInAt;
+
+    /**
      * Set when the closing OTP is successfully verified and the booking
      * transitions to COMPLETED. Records the actual physical release time.
      */

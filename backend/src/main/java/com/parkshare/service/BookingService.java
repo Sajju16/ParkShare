@@ -121,6 +121,15 @@ public class BookingService {
             throw new RuntimeException("OTP verification is only allowed for CONFIRMED bookings.");
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime earliestAllowedCheckIn = booking.getStartTime().minusMinutes(15);
+        if (now.isBefore(earliestAllowedCheckIn)) {
+            throw new IllegalArgumentException(
+                    "Check-in is only allowed up to 15 minutes before the scheduled start time (" +
+                            booking.getStartTime().format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a, MMM dd yyyy")) + ")."
+            );
+        }
+
         // Lock check – prevent verification after 3 failed attempts
         if (booking.getOtpAttempts() >= MAX_OTP_ATTEMPTS) {
             throw new RuntimeException(
@@ -132,6 +141,7 @@ public class BookingService {
         if (booking.getOtpCode() != null && booking.getOtpCode().equals(request.getOtpCode())) {
             // ✅ Correct OTP → CONFIRMED → ACTIVE
             booking.setStatus(BookingStatus.ACTIVE);
+            booking.setActualCheckInAt(now);
             bookingRepository.save(booking);
             return mapToOwnerResponse(booking);
         } else {
@@ -243,14 +253,28 @@ public class BookingService {
             booking.setActualClosedAt(closedAt);
 
             // ── Actual Usage Billing (v1.3) ─────────────────────────────────
-            // Compute actual minutes from booking start to actual closure
-            long actualMinutes = Duration.between(booking.getStartTime(), closedAt).toMinutes();
-            if (actualMinutes < 1) actualMinutes = 1; // minimum 1 minute
+            LocalDateTime effectiveStart = booking.getActualCheckInAt() != null 
+                    ? booking.getActualCheckInAt() 
+                    : booking.getStartTime();
+
+            // Elapsed minutes cannot be negative (e.g. check-in during grace period before scheduled start)
+            long elapsedMinutes = 0;
+            if (closedAt.isAfter(effectiveStart)) {
+                elapsedMinutes = Duration.between(effectiveStart, closedAt).toMinutes();
+            }
+
+            // Minimum 1-hour billing rule (60 minutes), capped at scheduled duration if booking was < 60 min
+            long scheduledMinutes = Duration.between(booking.getStartTime(), booking.getEndTime()).toMinutes();
+            long minBillingMinutes = Math.min(60, scheduledMinutes > 0 ? scheduledMinutes : 60);
+            long billableMinutes = Math.max(minBillingMinutes, elapsedMinutes);
+
             double ratePerMinute = booking.getParkingSpace().getPricePerHour() / 60.0;
-            double actualCharge = Math.round(actualMinutes * ratePerMinute * 100.0) / 100.0;
+            // Cap actualUsageCharge at original booking totalPrice (overstay extra charge is calculated separately)
+            double actualCharge = Math.min(booking.getTotalPrice(), Math.round(billableMinutes * ratePerMinute * 100.0) / 100.0);
             booking.setActualUsageCharge(actualCharge);
-            // refundAdjustment: positive = overpaid (refund owed); negative = overstay extra
-            double adjustment = Math.round((booking.getTotalPrice() - actualCharge) * 100.0) / 100.0;
+
+            // refundAdjustment: positive = overpaid (pending refund owed); 0 if exact match or overstay
+            double adjustment = Math.max(0.0, Math.round((booking.getTotalPrice() - actualCharge) * 100.0) / 100.0);
             booking.setRefundAdjustment(adjustment);
 
             // Calculate overstay extra charge (if the booking entered OVERSTAY state)
@@ -264,14 +288,12 @@ public class BookingService {
                     paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
                         payment.setOverstayAmount(extraCharge);
                         payment.setOverstayPaymentStatus("PENDING");
-                        paymentRepository.save(payment);
                     });
                 } else {
                     booking.setOverstayExtraCharge(0.0);
                     paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
                         payment.setOverstayAmount(0.0);
                         payment.setOverstayPaymentStatus("NOT_REQUIRED");
-                        paymentRepository.save(payment);
                     });
                 }
             } else {
@@ -279,9 +301,20 @@ public class BookingService {
                 paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
                     payment.setOverstayAmount(0.0);
                     payment.setOverstayPaymentStatus("NOT_REQUIRED");
-                    paymentRepository.save(payment);
                 });
             }
+
+            // Reconcile Payment record: preserve original amount, update settledAmount, refundAdjustment, commission, and ownerEarnings
+            final double COMMISSION_RATE = 0.10;
+            paymentRepository.findByBookingId(bookingId).ifPresent(payment -> {
+                payment.setSettledAmount(actualCharge);
+                payment.setRefundAdjustment(adjustment);
+                double finalCommission = Math.round(actualCharge * COMMISSION_RATE * 100.0) / 100.0;
+                double finalOwnerEarnings = Math.round((actualCharge - finalCommission) * 100.0) / 100.0;
+                payment.setCommission(finalCommission);
+                payment.setOwnerEarnings(finalOwnerEarnings);
+                paymentRepository.save(payment);
+            });
 
             booking = bookingRepository.save(booking);
 
@@ -573,6 +606,7 @@ public class BookingService {
         r.setCreatedAt(booking.getCreatedAt());
         // Overstay fields (safe to expose to both driver and owner)
         r.setOverstayStartedAt(booking.getOverstayStartedAt());
+        r.setActualCheckInAt(booking.getActualCheckInAt());
         r.setActualClosedAt(booking.getActualClosedAt());
         r.setOverstayExtraCharge(booking.getOverstayExtraCharge());
         paymentRepository.findByBookingId(booking.getId()).ifPresent(payment -> {

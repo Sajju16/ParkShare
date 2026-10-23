@@ -1,4 +1,4 @@
-﻿package com.parkshare.exception;
+package com.parkshare.exception;
 
 import com.parkshare.dto.ApiResponse;
 import org.springframework.dao.DataAccessException;

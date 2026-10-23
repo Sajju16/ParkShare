@@ -87,6 +87,8 @@ public class PaymentService {
             payment.setBooking(booking);
             payment.setRazorpayOrderId(orderId);
             payment.setAmount(booking.getTotalPrice());
+            payment.setSettledAmount(booking.getTotalPrice());
+            payment.setRefundAdjustment(0.0);
             payment.setCommission(booking.getTotalPrice() * COMMISSION_RATE);
             payment.setOwnerEarnings(booking.getTotalPrice() * (1 - COMMISSION_RATE));
             payment.setStatus("CREATED");
@@ -329,7 +331,7 @@ public class PaymentService {
             if (bk.getActualUsageCharge() != null) {
                 document.add(new Paragraph("Actual Usage Charge: ₹" + String.format("%.2f", bk.getActualUsageCharge()), normalFont));
                 if (bk.getRefundAdjustment() != null && bk.getRefundAdjustment() > 0) {
-                    document.add(new Paragraph("Refund/Adjustment: ₹" + String.format("%.2f", bk.getRefundAdjustment()) + " (Pending — will be processed separately)", normalFont));
+                    document.add(new Paragraph("Refund Adjustment (Pending Platform Settlement): ₹" + String.format("%.2f", bk.getRefundAdjustment()), normalFont));
                 }
             }
 
@@ -368,6 +370,8 @@ public class PaymentService {
                 .parkingSpaceTitle(spaceTitle)
                 .razorpayPaymentId(payment.getRazorpayPaymentId())
                 .amount(payment.getAmount())
+                .settledAmount(payment.getSettledAmount() != null ? payment.getSettledAmount() : payment.getAmount())
+                .refundAdjustment(payment.getRefundAdjustment() != null ? payment.getRefundAdjustment() : 0.0)
                 .commission(payment.getCommission())
                 .ownerEarnings(payment.getOwnerEarnings())
                 .status(payment.getStatus())

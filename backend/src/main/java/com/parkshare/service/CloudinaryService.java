@@ -24,7 +24,7 @@ public class CloudinaryService {
             // Return a placeholder image if using dummy credentials
             return "https://via.placeholder.com/400x300?text=Parking+Space";
         }
-        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.emptyMap());
+        Map<?, ?> uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.emptyMap());
         return uploadResult.get("url").toString();
     }
 }

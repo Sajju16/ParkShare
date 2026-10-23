@@ -23,6 +23,12 @@ public class PaymentSummaryResponse {
     /** Total amount paid by driver for original booking (INR). */
     private Double amount;
 
+    /** Settled usage amount after early checkout adjustment (INR). */
+    private Double settledAmount;
+
+    /** Pending refund adjustment for early checkout (INR). */
+    private Double refundAdjustment;
+
     /** Platform commission (10% of amount). */
     private Double commission;
 
