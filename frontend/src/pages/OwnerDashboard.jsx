@@ -1,10 +1,29 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import api from '../services/api';
+import {
+    Plus,
+    MapPin,
+    Car,
+    ShieldCheck,
+    Zap,
+    Tag,
+    CalendarCheck,
+    TrendingUp,
+    X,
+    Crosshair,
+    Upload,
+    AlertCircle,
+    ArrowRight,
+    RefreshCw,
+    Warehouse,
+    CheckCircle2
+} from 'lucide-react';
 
-// ─── Leaflet icon fix ────────────────────────────────────────────────────────
+// Leaflet icon default fix
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -22,12 +41,13 @@ const redMarkerIcon = new L.Icon({
     shadowSize: [41, 41],
 });
 
-// Map recenter helper
+// Map recenter and size invalidation helper
 const MapRecenter = ({ center }) => {
     const map = useMap();
     useEffect(() => {
         if (center && center[0] && center[1]) {
-            map.flyTo(center, 14, { duration: 1.0 });
+            map.invalidateSize();
+            map.flyTo(center, 14, { duration: 0.8 });
         }
     }, [center, map]);
     return null;
@@ -43,18 +63,30 @@ const MapClickListener = ({ onSelect }) => {
     return null;
 };
 
+const initialFormState = {
+    title: '',
+    description: '',
+    address: '',
+    city: '',
+    zipCode: '',
+    pricePerHour: '',
+    pricePerDay: '',
+    latitude: '',
+    longitude: '',
+    vehicleType: 'SEDAN',
+    propertyType: 'HOUSE',
+    isCovered: false,
+    hasEvCharging: false
+};
+
 const OwnerDashboard = () => {
     const [spaces, setSpaces] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState('');
     const [showForm, setShowForm] = useState(false);
-    const [spaceForm, setSpaceForm] = useState({
-        title: '', description: '', address: '', city: '', zipCode: '',
-        pricePerHour: '', pricePerDay: '',
-        latitude: '', longitude: '',
-        vehicleType: 'SEDAN',
-        propertyType: 'HOUSE',
-        isCovered: false, hasEvCharging: false
-    });
+    const [spaceForm, setSpaceForm] = useState(initialFormState);
     const [file, setFile] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [locLoading, setLocLoading] = useState(false);
@@ -64,18 +96,41 @@ const OwnerDashboard = () => {
         fetchSpaces();
     }, []);
 
+    // Clean up preview object URL if generated
+    useEffect(() => {
+        return () => {
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+        };
+    }, [previewUrl]);
+
     const fetchSpaces = async () => {
+        setLoading(true);
+        setFetchError('');
         try {
             const res = await api.get('/parking/owner');
-            if (res.success) setSpaces(res.data);
+            if (res.success) {
+                setSpaces(res.data || []);
+            } else {
+                setFetchError('Could not load parking spaces.');
+            }
         } catch (err) {
             console.error('Failed to fetch parking spaces', err);
+            setFetchError('Failed to connect to the server. Please check your connection.');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleFileChange = (e) => setFile(e.target.files[0]);
+    const handleFileChange = (e) => {
+        const selectedFile = e.target.files[0];
+        if (selectedFile) {
+            setFile(selectedFile);
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(URL.createObjectURL(selectedFile));
+        }
+    };
 
-    // Option A: Use My Current Location via browser Geolocation API
+    // Use My Current Location via browser Geolocation API
     const handleUseCurrentLocation = () => {
         if (!navigator.geolocation) {
             setLocError('Geolocation is not supported by your browser.');
@@ -94,19 +149,29 @@ const OwnerDashboard = () => {
             },
             (err) => {
                 setLocLoading(false);
-                setLocError('Could not retrieve location. Please grant location permission or click on the map.');
+                setLocError('Could not retrieve location. Please grant permission or click on the map.');
             },
             { enableHighAccuracy: true, timeout: 10000 }
         );
     };
 
-    // Option B: Map click handler
+    // Map click handler
     const handleMapSelect = (lat, lng) => {
         setSpaceForm(prev => ({
             ...prev,
             latitude: lat.toFixed(6),
             longitude: lng.toFixed(6)
         }));
+    };
+
+    const resetFormAndClose = () => {
+        setShowForm(false);
+        setSpaceForm(initialFormState);
+        setFile(null);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        setSubmitError('');
+        setLocError('');
     };
 
     const handleSubmit = async (e) => {
@@ -117,11 +182,11 @@ const OwnerDashboard = () => {
         const latNum = parseFloat(spaceForm.latitude);
         const lngNum = parseFloat(spaceForm.longitude);
         if (isNaN(latNum) || latNum < -90 || latNum > 90) {
-            setSubmitError('Please select a valid location on the map or enter a latitude between -90 and 90.');
+            setSubmitError('Please select a valid location on the map (latitude must be between -90 and 90).');
             return;
         }
         if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
-            setSubmitError('Please select a valid location on the map or enter a longitude between -180 and 180.');
+            setSubmitError('Please select a valid location on the map (longitude must be between -180 and 180).');
             return;
         }
 
@@ -138,9 +203,10 @@ const OwnerDashboard = () => {
                 if (uploadRes.success) images.push(uploadRes.data);
             } catch (err) {
                 console.error('Upload failed', err);
-                setSubmitError('Image upload failed. Saving without image.');
+                setSubmitError('Image upload failed. Space will be saved without the image.');
+            } finally {
+                setUploading(false);
             }
-            setUploading(false);
         }
 
         const payload = {
@@ -153,20 +219,18 @@ const OwnerDashboard = () => {
         };
 
         try {
+            setUploading(true);
             const res = await api.post('/parking', payload);
             if (res.success) {
-                setShowForm(false);
-                setSpaceForm({
-                    title: '', description: '', address: '', city: '', zipCode: '',
-                    pricePerHour: '', pricePerDay: '', latitude: '', longitude: '',
-                    vehicleType: 'SEDAN', propertyType: 'HOUSE',
-                    isCovered: false, hasEvCharging: false
-                });
-                setFile(null);
+                resetFormAndClose();
                 fetchSpaces();
+            } else {
+                setSubmitError(res.message || 'Failed to save parking space.');
             }
         } catch (err) {
             setSubmitError(err.response?.data?.message || 'Failed to save parking space.');
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -176,180 +240,564 @@ const OwnerDashboard = () => {
         : [12.9716, 77.5946];
 
     return (
-        <div className="p-8">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold text-gray-800">Owner Dashboard</h1>
-                <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded font-semibold hover:bg-blue-700 transition">
-                    {showForm ? 'Cancel' : 'Add Parking Space'}
+        <div className="w-full space-y-6">
+            {/* Header Section */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+                <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1E2024]">
+                        My Spaces
+                    </h1>
+                    <p className="text-sm text-[#666970] mt-1">
+                        List and manage your parking spaces.
+                    </p>
+                </div>
+                <button
+                    onClick={() => setShowForm(true)}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#2554D7] hover:bg-[#1D44B8] text-white text-sm font-semibold shadow-xs hover:shadow transition-all cursor-pointer self-start sm:self-auto"
+                >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Parking Space</span>
                 </button>
             </div>
 
+            {/* Error Notification Banner */}
+            {fetchError && (
+                <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                        <span>{fetchError}</span>
+                    </div>
+                    <button
+                        onClick={fetchSpaces}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-800 text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Loading State */}
+            {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[1, 2, 3].map((n) => (
+                        <div key={n} className="bg-white rounded-2xl border border-[#EAEAE7] p-4 space-y-4 animate-pulse">
+                            <div className="w-full h-44 bg-[#F8F8F6] rounded-xl" />
+                            <div className="h-5 bg-[#F8F8F6] rounded-md w-3/4" />
+                            <div className="h-4 bg-[#F8F8F6] rounded-md w-1/2" />
+                            <div className="pt-2 border-t border-[#EAEAE7] flex justify-between">
+                                <div className="h-4 bg-[#F8F8F6] rounded-md w-1/4" />
+                                <div className="h-4 bg-[#F8F8F6] rounded-md w-1/4" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : spaces.length === 0 ? (
+                /* Empty State */
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-8 sm:p-12 text-center max-w-2xl mx-auto shadow-xs">
+                    <div className="w-16 h-16 rounded-2xl bg-[#EEF2FD] border border-[#D5E0FA] flex items-center justify-center mx-auto text-[#2554D7] mb-5 shadow-xs">
+                        <Warehouse className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-[#1E2024] tracking-tight mb-2">
+                        You haven't added any parking spaces yet.
+                    </h2>
+                    <p className="text-sm text-[#666970] max-w-md mx-auto mb-6">
+                        List your driveway, parking slot or private space and start earning.
+                    </p>
+
+                    <button
+                        onClick={() => setShowForm(true)}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#2554D7] hover:bg-[#1D44B8] text-white font-semibold text-sm transition-all shadow-xs hover:shadow cursor-pointer"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Parking Space</span>
+                    </button>
+
+                    {/* Three Compact Feature Highlights */}
+                    <div className="mt-10 pt-8 border-t border-[#EAEAE7] grid grid-cols-1 sm:grid-cols-3 gap-6 text-left">
+                        <div className="p-3.5 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7]">
+                            <div className="w-8 h-8 rounded-lg bg-white border border-[#EAEAE7] flex items-center justify-center text-[#2554D7] mb-2.5 shadow-xs">
+                                <Tag className="w-4 h-4" />
+                            </div>
+                            <h3 className="text-xs font-bold text-[#1E2024] uppercase tracking-wider mb-1">
+                                Set Your Price
+                            </h3>
+                            <p className="text-xs text-[#666970] leading-relaxed">
+                                Choose hourly or daily rates.
+                            </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7]">
+                            <div className="w-8 h-8 rounded-lg bg-white border border-[#EAEAE7] flex items-center justify-center text-[#2554D7] mb-2.5 shadow-xs">
+                                <CalendarCheck className="w-4 h-4" />
+                            </div>
+                            <h3 className="text-xs font-bold text-[#1E2024] uppercase tracking-wider mb-1">
+                                Manage Bookings
+                            </h3>
+                            <p className="text-xs text-[#666970] leading-relaxed">
+                                View and respond to requests.
+                            </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7]">
+                            <div className="w-8 h-8 rounded-lg bg-white border border-[#EAEAE7] flex items-center justify-center text-[#2554D7] mb-2.5 shadow-xs">
+                                <TrendingUp className="w-4 h-4" />
+                            </div>
+                            <h3 className="text-xs font-bold text-[#1E2024] uppercase tracking-wider mb-1">
+                                Earn Income
+                            </h3>
+                            <p className="text-xs text-[#666970] leading-relaxed">
+                                Track your earnings easily.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                /* Populated State (Active Parking Spaces Grid) */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {spaces.map((space) => {
+                        const hasImage = space.images && space.images.length > 0;
+                        const isCovered = space.covered ?? space.isCovered;
+                        const hasEv = space.evCharging ?? space.hasEvCharging;
+                        const isAvailable = space.available !== false;
+
+                        return (
+                            <div
+                                key={space.id}
+                                className="bg-white rounded-2xl border border-[#EAEAE7] overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col group"
+                            >
+                                {/* Card Media Header */}
+                                <div className="relative h-48 w-full bg-[#F8F8F6] overflow-hidden border-b border-[#EAEAE7]">
+                                    {hasImage ? (
+                                        <img
+                                            src={space.images[0]}
+                                            alt={space.title}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-1.5">
+                                            <Car className="w-8 h-8 opacity-40 text-gray-400" />
+                                            <span className="text-xs font-medium text-gray-500">No photo uploaded</span>
+                                        </div>
+                                    )}
+
+                                    {/* Badges Overlay */}
+                                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+                                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase bg-white/95 backdrop-blur-xs text-[#2554D7] shadow-xs">
+                                            {space.vehicleType || 'VEHICLE'}
+                                        </span>
+                                        <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/60 backdrop-blur-xs text-white">
+                                            {space.propertyType === 'APARTMENT' ? 'Apartment' : 'House'}
+                                        </span>
+                                    </div>
+
+                                    {/* Availability Status Badge */}
+                                    <div className="absolute top-3 right-3 z-10">
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold backdrop-blur-xs shadow-xs ${
+                                            isAvailable
+                                                ? 'bg-emerald-500/90 text-white'
+                                                : 'bg-amber-500/90 text-white'
+                                        }`}>
+                                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                            <span>{isAvailable ? 'Active' : 'Paused'}</span>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Card Content */}
+                                <div className="p-5 flex-1 flex flex-col justify-between">
+                                    <div className="space-y-2">
+                                        <h3 className="font-bold text-base text-[#1E2024] group-hover:text-[#2554D7] transition-colors tracking-tight line-clamp-1">
+                                            {space.title}
+                                        </h3>
+                                        <p className="text-xs text-[#666970] flex items-center gap-1.5 line-clamp-1">
+                                            <MapPin className="w-3.5 h-3.5 shrink-0 text-gray-400" />
+                                            <span>{space.address}{space.city ? `, ${space.city}` : ''}</span>
+                                        </p>
+
+                                        {/* Amenities Chips */}
+                                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                                            {isCovered && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[11px] font-medium border border-emerald-100">
+                                                    <ShieldCheck className="w-3 h-3" />
+                                                    <span>Covered</span>
+                                                </span>
+                                            )}
+                                            {hasEv && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#2554D7] text-[11px] font-medium border border-blue-100">
+                                                    <Zap className="w-3 h-3" />
+                                                    <span>EV Charging</span>
+                                                </span>
+                                            )}
+                                            {space.latitude && space.longitude && (
+                                                <span className="inline-flex items-center gap-1 text-[11px] text-gray-400 font-mono">
+                                                    {parseFloat(space.latitude).toFixed(3)}, {parseFloat(space.longitude).toFixed(3)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Card Footer: Pricing and Action */}
+                                    <div className="mt-5 pt-4 border-t border-[#EAEAE7] flex items-center justify-between">
+                                        <div>
+                                            <span className="text-lg font-bold text-[#1E2024]">
+                                                {'\u20B9'}{space.pricePerHour}
+                                            </span>
+                                            <span className="text-xs text-[#666970] font-normal"> / hour</span>
+                                            {space.pricePerDay && (
+                                                <div className="text-[11px] text-gray-500">
+                                                    {'\u20B9'}{space.pricePerDay} / day
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <Link
+                                            to={`/parking/${space.id}`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8F8F6] hover:bg-[#EEF2FD] text-[#1E2024] hover:text-[#2554D7] text-xs font-semibold border border-[#EAEAE7] transition-colors"
+                                        >
+                                            <span>View</span>
+                                            <ArrowRight className="w-3.5 h-3.5" />
+                                        </Link>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Add Parking Space Modal Dialog */}
             {showForm && (
-                <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow mb-8 space-y-4 max-w-2xl border border-gray-200">
-                    {submitError && <div className="text-red-600 bg-red-50 p-3 rounded text-sm font-semibold border border-red-200">{submitError}</div>}
-
-                    <input className="border p-2 w-full rounded" placeholder="Title *" required
-                        value={spaceForm.title} onChange={e => setSpaceForm({...spaceForm, title: e.target.value})} />
-
-                    <textarea className="border p-2 w-full rounded" placeholder="Description"
-                        value={spaceForm.description} onChange={e => setSpaceForm({...spaceForm, description: e.target.value})} />
-
-                    <input className="border p-2 w-full rounded" placeholder="Address *" required
-                        value={spaceForm.address} onChange={e => setSpaceForm({...spaceForm, address: e.target.value})} />
-
-                    <div className="flex gap-4">
-                        <input className="border p-2 w-full rounded" placeholder="City"
-                            value={spaceForm.city} onChange={e => setSpaceForm({...spaceForm, city: e.target.value})} />
-                        <input className="border p-2 w-full rounded" placeholder="Zip Code"
-                            value={spaceForm.zipCode} onChange={e => setSpaceForm({...spaceForm, zipCode: e.target.value})} />
-                    </div>
-
-                    {/* Property Type */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Property Type <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                            className="border p-2 w-full rounded"
-                            required
-                            value={spaceForm.propertyType}
-                            onChange={e => setSpaceForm({...spaceForm, propertyType: e.target.value})}>
-                            <option value="HOUSE">🏠 House</option>
-                            <option value="APARTMENT">🏢 Apartment</option>
-                        </select>
-                    </div>
-
-                    <div className="flex gap-4">
-                        <input className="border p-2 w-full rounded" type="number" step="0.01" placeholder="Price per Hour *" required
-                            value={spaceForm.pricePerHour} onChange={e => setSpaceForm({...spaceForm, pricePerHour: e.target.value})} />
-                        <input className="border p-2 w-full rounded" type="number" step="0.01" placeholder="Price per Day"
-                            value={spaceForm.pricePerDay} onChange={e => setSpaceForm({...spaceForm, pricePerDay: e.target.value})} />
-                    </div>
-
-                    {/* ── LOCATION PICKER SECTION (Option A & Option B) ── */}
-                    <div className="bg-gray-50 border border-gray-200 p-4 rounded-xl space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <label className="block text-sm font-bold text-gray-800">
-                                Parking Space Location <span className="text-red-500">*</span>
-                            </label>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
+                    <div
+                        className="bg-white rounded-2xl border border-[#EAEAE7] shadow-2xl w-full max-w-2xl my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                        role="dialog"
+                        aria-modal="true"
+                    >
+                        {/* Modal Header */}
+                        <div className="px-6 py-4 border-b border-[#EAEAE7] flex items-center justify-between bg-white sticky top-0 z-20">
+                            <div>
+                                <h2 className="text-lg font-bold text-[#1E2024]">Add New Parking Space</h2>
+                                <p className="text-xs text-[#666970]">Enter space details and pin location on the map.</p>
+                            </div>
                             <button
                                 type="button"
-                                onClick={handleUseCurrentLocation}
-                                disabled={locLoading}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 px-3 rounded flex items-center justify-center gap-1 transition shadow-sm disabled:opacity-50"
+                                onClick={resetFormAndClose}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-[#1E2024] hover:bg-gray-100 transition-colors cursor-pointer"
+                                aria-label="Close"
                             >
-                                {locLoading ? 'Locating...' : '📍 Use My Current Location'}
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {locError && <p className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">{locError}</p>}
+                        {/* Modal Body / Form */}
+                        <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+                            {submitError && (
+                                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                                    <span>{submitError}</span>
+                                </div>
+                            )}
 
-                        <p className="text-xs text-gray-500">
-                            Click or tap anywhere on the map below to place/adjust your parking space pin (🗺️ Map Picker):
-                        </p>
+                            {/* Section: Basic Info */}
+                            <div className="space-y-4">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                    General Details
+                                </h3>
+                                <div>
+                                    <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                        Space Title <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                        placeholder="e.g. Covered Secure Driveway near Indiranagar Metro"
+                                        required
+                                        value={spaceForm.title}
+                                        onChange={(e) => setSpaceForm({ ...spaceForm, title: e.target.value })}
+                                    />
+                                </div>
 
-                        {/* Interactive Leaflet Map Picker */}
-                        <div className="h-56 w-full rounded-lg overflow-hidden border border-gray-300 relative z-0">
-                            <MapContainer center={currentMapCenter} zoom={13} className="w-full h-full">
-                                <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                />
-                                <MapClickListener onSelect={handleMapSelect} />
-                                {hasValidCoords && (
-                                    <>
-                                        <MapRecenter center={currentMapCenter} />
-                                        <Marker position={currentMapCenter} icon={redMarkerIcon} />
-                                    </>
+                                <div>
+                                    <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                        Description
+                                    </label>
+                                    <textarea
+                                        rows={2}
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition resize-none"
+                                        placeholder="Describe access instructions, gate rules, or space features..."
+                                        value={spaceForm.description}
+                                        onChange={(e) => setSpaceForm({ ...spaceForm, description: e.target.value })}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                        Street Address <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                        placeholder="e.g. 42, 100ft Road, HAL 2nd Stage"
+                                        required
+                                        value={spaceForm.address}
+                                        onChange={(e) => setSpaceForm({ ...spaceForm, address: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">City</label>
+                                        <input
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                            placeholder="e.g. Bengaluru"
+                                            value={spaceForm.city}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, city: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">Zip Code</label>
+                                        <input
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                            placeholder="e.g. 560038"
+                                            value={spaceForm.zipCode}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, zipCode: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                            Property Type <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] focus:outline-none focus:border-[#2554D7] bg-white transition"
+                                            required
+                                            value={spaceForm.propertyType}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, propertyType: e.target.value })}
+                                        >
+                                            <option value="HOUSE">House / Independent Villa</option>
+                                            <option value="APARTMENT">Apartment / Residential Complex</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                            Vehicle Type <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] focus:outline-none focus:border-[#2554D7] bg-white transition"
+                                            value={spaceForm.vehicleType}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, vehicleType: e.target.value })}
+                                        >
+                                            <option value="SEDAN">Sedan</option>
+                                            <option value="HATCHBACK">Hatchback</option>
+                                            <option value="SUV">SUV</option>
+                                            <option value="BIKE">Bike / Two Wheeler</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Pricing */}
+                            <div className="space-y-4 pt-2 border-t border-[#EAEAE7]">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                    Pricing
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                            Price Per Hour ({'\u20B9'}) <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] bg-white transition"
+                                            type="number"
+                                            step="any"
+                                            min="0"
+                                            placeholder="e.g. 50"
+                                            required
+                                            value={spaceForm.pricePerHour}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, pricePerHour: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1">
+                                            Price Per Day ({'\u20B9'}) <span className="text-gray-400 font-normal">(Optional)</span>
+                                        </label>
+                                        <input
+                                            className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-sm text-[#1E2024] placeholder-gray-400 focus:outline-none focus:border-[#2554D7] bg-white transition"
+                                            type="number"
+                                            step="any"
+                                            min="0"
+                                            placeholder="e.g. 400"
+                                            value={spaceForm.pricePerDay}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, pricePerDay: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Amenities */}
+                            <div className="space-y-3 pt-2 border-t border-[#EAEAE7]">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                    Amenities & Features
+                                </h3>
+                                <div className="flex flex-wrap gap-6">
+                                    <label className="flex items-center gap-2.5 text-sm text-[#1E2024] cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={spaceForm.isCovered}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, isCovered: e.target.checked })}
+                                            className="w-4 h-4 rounded text-[#2554D7] border-gray-300 focus:ring-[#2554D7]"
+                                        />
+                                        <span>Covered Parking</span>
+                                    </label>
+                                    <label className="flex items-center gap-2.5 text-sm text-[#1E2024] cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={spaceForm.hasEvCharging}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, hasEvCharging: e.target.checked })}
+                                            className="w-4 h-4 rounded text-[#2554D7] border-gray-300 focus:ring-[#2554D7]"
+                                        />
+                                        <span>EV Charging Available</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Section: Location Picker (Option A GPS + Option B Leaflet Map) */}
+                            <div className="space-y-3 pt-2 border-t border-[#EAEAE7]">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div>
+                                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                            Location on Map <span className="text-red-500">*</span>
+                                        </h3>
+                                        <p className="text-[11px] text-[#666970]">
+                                            Click on the map or use your GPS location to set the pin.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleUseCurrentLocation}
+                                        disabled={locLoading}
+                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF2FD] hover:bg-[#DCE5FC] text-[#2554D7] text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer self-start sm:self-auto"
+                                    >
+                                        <Crosshair className="w-3.5 h-3.5" />
+                                        <span>{locLoading ? 'Locating...' : 'Use Current GPS'}</span>
+                                    </button>
+                                </div>
+
+                                {locError && (
+                                    <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                                        {locError}
+                                    </div>
                                 )}
-                            </MapContainer>
-                        </div>
 
-                        {/* Display Coordinates & Editable Fallback */}
-                        <div className="flex gap-4 pt-1">
-                            <div className="w-1/2">
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                                    Latitude (-90 to 90) *
-                                </label>
-                                <input
-                                    className="border p-2 w-full rounded text-xs font-mono bg-white"
-                                    type="number"
-                                    step="any"
-                                    placeholder="e.g. 12.9716"
-                                    required
-                                    value={spaceForm.latitude}
-                                    onChange={e => setSpaceForm({...spaceForm, latitude: e.target.value})}
-                                />
+                                {/* Leaflet Map Picker Container */}
+                                <div className="h-56 w-full rounded-xl overflow-hidden border border-[#EAEAE7] relative z-0 shadow-xs">
+                                    <MapContainer center={currentMapCenter} zoom={13} className="w-full h-full">
+                                        <TileLayer
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                        />
+                                        <MapClickListener onSelect={handleMapSelect} />
+                                        {hasValidCoords && (
+                                            <>
+                                                <MapRecenter center={currentMapCenter} />
+                                                <Marker position={currentMapCenter} icon={redMarkerIcon} />
+                                            </>
+                                        )}
+                                    </MapContainer>
+                                </div>
+
+                                {/* Coordinate Inputs */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[11px] font-semibold text-gray-500 mb-1">
+                                            Latitude (-90 to 90) *
+                                        </label>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            required
+                                            placeholder="12.9716"
+                                            value={spaceForm.latitude}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, latitude: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-[#EAEAE7] text-xs font-mono text-[#1E2024] bg-[#F8F8F6] focus:bg-white focus:outline-none focus:border-[#2554D7]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-semibold text-gray-500 mb-1">
+                                            Longitude (-180 to 180) *
+                                        </label>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            required
+                                            placeholder="77.5946"
+                                            value={spaceForm.longitude}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, longitude: e.target.value })}
+                                            className="w-full px-3 py-2 rounded-lg border border-[#EAEAE7] text-xs font-mono text-[#1E2024] bg-[#F8F8F6] focus:bg-white focus:outline-none focus:border-[#2554D7]"
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <div className="w-1/2">
-                                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                                    Longitude (-180 to 180) *
-                                </label>
-                                <input
-                                    className="border p-2 w-full rounded text-xs font-mono bg-white"
-                                    type="number"
-                                    step="any"
-                                    placeholder="e.g. 77.5946"
-                                    required
-                                    value={spaceForm.longitude}
-                                    onChange={e => setSpaceForm({...spaceForm, longitude: e.target.value})}
-                                />
+
+                            {/* Section: Photo Upload */}
+                            <div className="space-y-3 pt-2 border-t border-[#EAEAE7]">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                    Space Photo (Optional)
+                                </h3>
+                                <div className="flex items-center gap-4">
+                                    {previewUrl ? (
+                                        <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-[#EAEAE7] shrink-0">
+                                            <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                                        </div>
+                                    ) : (
+                                        <div className="w-20 h-20 rounded-xl bg-[#F8F8F6] border border-dashed border-[#EAEAE7] flex items-center justify-center text-gray-400 shrink-0">
+                                            <Upload className="w-6 h-6 opacity-40 text-gray-400" />
+                                        </div>
+                                    )}
+                                    <div className="flex-1">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleFileChange}
+                                            className="block w-full text-xs text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#EEF2FD] file:text-[#2554D7] hover:file:bg-[#DCE5FC] cursor-pointer"
+                                        />
+                                        <p className="text-[11px] text-gray-500 mt-1">PNG, JPG, or WEBP up to 5MB.</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+
+                            {/* Modal Footer Actions */}
+                            <div className="pt-4 border-t border-[#EAEAE7] flex items-center justify-end gap-3 sticky bottom-0 bg-white">
+                                <button
+                                    type="button"
+                                    onClick={resetFormAndClose}
+                                    className="px-4 py-2.5 rounded-xl border border-[#EAEAE7] hover:bg-gray-50 text-[#1E2024] text-xs font-semibold transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={uploading}
+                                    className="px-5 py-2.5 rounded-xl bg-[#2554D7] hover:bg-[#1D44B8] text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                                >
+                                    {uploading ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Saving Space...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            <span>Save Parking Space</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
-
-                    <select className="border p-2 w-full rounded"
-                        value={spaceForm.vehicleType} onChange={e => setSpaceForm({...spaceForm, vehicleType: e.target.value})}>
-                        <option value="BIKE">Bike / Two Wheeler</option>
-                        <option value="HATCHBACK">Hatchback</option>
-                        <option value="SEDAN">Sedan</option>
-                        <option value="SUV">SUV</option>
-                    </select>
-
-                    <div className="flex gap-4">
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input type="checkbox" checked={spaceForm.isCovered}
-                                onChange={e => setSpaceForm({...spaceForm, isCovered: e.target.checked})} /> Covered Parking
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input type="checkbox" checked={spaceForm.hasEvCharging}
-                                onChange={e => setSpaceForm({...spaceForm, hasEvCharging: e.target.checked})} /> EV Charging
-                        </label>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Image</label>
-                        <input type="file" accept="image/*" onChange={handleFileChange} className="border p-2 w-full rounded" />
-                    </div>
-
-                    <button type="submit" disabled={uploading}
-                        className="bg-green-600 text-white px-5 py-2.5 rounded font-bold disabled:opacity-50 hover:bg-green-700 transition shadow">
-                        {uploading ? 'Uploading...' : 'Save Parking Space'}
-                    </button>
-                </form>
+                </div>
             )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {spaces.map(space => (
-                    <div key={space.id} className="bg-white p-4 rounded shadow border border-gray-100">
-                        {space.images?.length > 0 ? (
-                            <img src={space.images[0]} alt="Parking" className="w-full h-48 object-cover rounded mb-4" />
-                        ) : (
-                            <div className="w-full h-48 bg-gray-200 rounded mb-4 flex items-center justify-center text-gray-500">No Image</div>
-                        )}
-                        <h3 className="font-bold text-xl">{space.title}</h3>
-                        <p className="text-gray-600 text-sm">{space.address}, {space.city}</p>
-                        <p className="font-bold mt-2 text-blue-600">₹{space.pricePerHour}/hr</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                            {space.vehicleType} &bull; {space.propertyType === 'HOUSE' ? '🏠 House' : '🏢 Apartment'}
-                        </p>
-                        {space.latitude && space.longitude && (
-                            <p className="text-xs text-green-600 mt-1">📍 {space.latitude}, {space.longitude}</p>
-                        )}
-                    </div>
-                ))}
-                {spaces.length === 0 && <p className="text-gray-500 col-span-3 text-center py-8">No parking spaces yet. Click "Add Parking Space" to add one.</p>}
-            </div>
         </div>
     );
 };

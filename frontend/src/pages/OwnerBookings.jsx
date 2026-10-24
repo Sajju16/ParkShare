@@ -1,29 +1,108 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
-import format from 'date-fns/format';
-import parse from 'date-fns/parse';
-import startOfWeek from 'date-fns/startOfWeek';
-import getDay from 'date-fns/getDay';
-import enUS from 'date-fns/locale/en-US';
+import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { enUS } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import api from '../services/api';
 import ConfirmationModal from '../components/ConfirmationModal';
-import { CheckCircle, XCircle, DollarSign, Users, Bell, Key, AlertTriangle, LogOut } from 'lucide-react';
+import {
+    Calendar as CalendarIcon,
+    CheckCircle,
+    XCircle,
+    Key,
+    AlertTriangle,
+    LogOut,
+    Car,
+    Clock,
+    User,
+    MapPin,
+    RotateCw,
+    TrendingUp,
+    ShieldCheck,
+    Check,
+    X,
+    CalendarDays,
+    ListFilter,
+    ChevronRight,
+    Loader2
+} from 'lucide-react';
 
 const locales = { 'en-US': enUS };
-
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
 
-/** Formats a number as an Indian Rupee string: ₹60.00 */
-const formatINR = (amount) => `₹${Number(amount || 0).toFixed(2)}`;
+/** Formats a number as an Indian Rupee string: \u20B960.00 */
+const formatINR = (amount) => `\u20B9${Number(amount || 0).toFixed(2)}`;
 
-// ── OTP Verification Panel (owner-facing) ────────────────────────────────────
+// Status Badge Component matching ParkShare design tokens
+const StatusBadge = ({ status }) => {
+    switch (status) {
+        case 'PENDING':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    Request Pending
+                </span>
+            );
+        case 'AWAITING_PAYMENT':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    Awaiting Payment
+                </span>
+            );
+        case 'CONFIRMED':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Awaiting Arrival
+                </span>
+            );
+        case 'ACTIVE':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                    Currently Parked
+                </span>
+            );
+        case 'OVERSTAY':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                    Overstay Session
+                </span>
+            );
+        case 'COMPLETED':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    Completed
+                </span>
+            );
+        case 'CANCELLED':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500 border border-gray-200">
+                    <XCircle className="w-3.5 h-3.5 text-gray-400" />
+                    Cancelled
+                </span>
+            );
+        case 'REJECTED':
+        case 'AUTO_REJECTED':
+            return (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200">
+                    <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                    Rejected
+                </span>
+            );
+        default:
+            return (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                    {status}
+                </span>
+            );
+    }
+};
 
-/**
- * PRD v1.0 Slice 2: Owner enters the 4-digit OTP the driver shows on arrival.
- * - otpAttempts from the booking response tracks remaining tries.
- * - Owner never sees the actual OTP value.
- */
+// Arrival OTP Verification Panel (Owner submits driver's arrival OTP)
 const OtpVerifyPanel = ({ booking, onSuccess }) => {
     const [otpInput, setOtpInput] = useState('');
     const [otpError, setOtpError] = useState('');
@@ -35,7 +114,7 @@ const OtpVerifyPanel = ({ booking, onSuccess }) => {
 
     const handleVerify = async () => {
         if (otpInput.length !== 4 || !/^\d{4}$/.test(otpInput)) {
-            setOtpError('Please enter a valid 4-digit OTP.');
+            setOtpError('Please enter a valid 4-digit numeric OTP.');
             return;
         }
         setOtpError('');
@@ -43,12 +122,14 @@ const OtpVerifyPanel = ({ booking, onSuccess }) => {
         try {
             const res = await api.put(`/bookings/${booking.id}/verify-otp`, { otpCode: otpInput });
             if (res.success) {
-                setOtpSuccess('✅ OTP verified! Booking is now ACTIVE.');
-                onSuccess();
+                setOtpSuccess('Arrival verified! Session is now ACTIVE.');
+                setTimeout(() => {
+                    onSuccess();
+                }, 800);
             }
         } catch (err) {
-            setOtpError(err.response?.data?.message || 'OTP verification failed.');
-            onSuccess(); // Refresh to get updated attempt count
+            setOtpError(err.response?.data?.message || 'OTP verification failed. Please check the code.');
+            onSuccess(); // Refresh attempt count from backend
         } finally {
             setLoading(false);
             setOtpInput('');
@@ -57,63 +138,69 @@ const OtpVerifyPanel = ({ booking, onSuccess }) => {
 
     if (isLocked) {
         return (
-            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
-                <AlertTriangle size={16} />
-                OTP verification is locked after 3 incorrect attempts.
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-red-700">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>Arrival OTP verification is locked after 3 incorrect attempts. Please contact support.</span>
             </div>
         );
     }
 
     return (
-        <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-                <Key size={16} className="text-blue-600" />
-                <p className="text-sm font-semibold text-blue-800">Verify Driver OTP</p>
-                <span className="text-xs text-blue-500 ml-auto">{remaining} attempt{remaining !== 1 ? 's' : ''} remaining</span>
+        <div className="bg-[#F8F8F6] border border-[#EAEAE7] rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                        <Key className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                        <h4 className="text-xs font-bold text-[#1E2024]">Verify Driver Arrival OTP</h4>
+                        <p className="text-[11px] text-[#666970]">Ask the arriving driver for their 4-digit check-in code</p>
+                    </div>
+                </div>
+                <span className="text-[11px] font-semibold text-[#666970] bg-white px-2 py-0.5 rounded-md border border-[#EAEAE7]">
+                    {remaining} attempt{remaining !== 1 ? 's' : ''} left
+                </span>
             </div>
-            <p className="text-xs text-blue-600 mb-3">Ask the driver for their 4-digit OTP and enter it below.</p>
 
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
                 <input
                     type="text"
                     inputMode="numeric"
                     maxLength={4}
                     value={otpInput}
-                    onChange={e => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="0000"
-                    className="w-28 text-center font-mono text-xl font-bold border-2 border-blue-300 rounded-lg p-2 focus:outline-none focus:border-blue-500 tracking-widest"
                     disabled={loading}
+                    className="w-28 text-center text-base font-bold font-mono tracking-widest bg-white border border-[#EAEAE7] rounded-xl py-2 px-3 text-[#1E2024] focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] transition-all disabled:opacity-50"
                 />
                 <button
+                    type="button"
                     onClick={handleVerify}
                     disabled={loading || otpInput.length < 4}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold text-sm transition"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#2554D7] hover:bg-[#1D44B8] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
-                    {loading ? 'Verifying...' : 'Verify OTP'}
+                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                    <span>{loading ? 'Verifying...' : 'Verify Arrival OTP'}</span>
                 </button>
             </div>
 
             {otpError && (
-                <p className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
-                    {otpError}
-                </p>
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                    <span>{otpError}</span>
+                </div>
             )}
             {otpSuccess && (
-                <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
-                    {otpSuccess}
-                </p>
+                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                    <span>{otpSuccess}</span>
+                </div>
             )}
         </div>
     );
 };
 
-// ── Closing OTP Verification Panel (owner-facing) ─────────────────────────────
-
-/**
- * Owner verifies the driver's closing OTP to confirm physical departure.
- * Called only after driver has initiated checkout (closingOtpCode is set).
- * Uses /verify-closing-otp endpoint.
- */
+// Closing OTP Verification Panel (Departure Confirmation)
 const ClosingOtpVerifyPanel = ({ booking, onSuccess }) => {
     const [otpInput, setOtpInput] = useState('');
     const [otpError, setOtpError] = useState('');
@@ -133,8 +220,10 @@ const ClosingOtpVerifyPanel = ({ booking, onSuccess }) => {
         try {
             const res = await api.put(`/bookings/${booking.id}/verify-closing-otp`, { otpCode: otpInput });
             if (res.success) {
-                setOtpSuccess('✅ Closing OTP verified! Booking is now COMPLETED. Space released.');
-                onSuccess();
+                setOtpSuccess('Closing OTP verified! Space is now released and session is COMPLETED.');
+                setTimeout(() => {
+                    onSuccess();
+                }, 800);
             }
         } catch (err) {
             setOtpError(err.response?.data?.message || 'Closing OTP verification failed.');
@@ -147,368 +236,642 @@ const ClosingOtpVerifyPanel = ({ booking, onSuccess }) => {
 
     if (isLocked) {
         return (
-            <div className="mt-3 bg-red-50 border border-red-300 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
-                <AlertTriangle size={16} />
-                Closing OTP verification is locked after 3 incorrect attempts. Contact support.
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-red-700">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>Closing OTP verification is locked after 3 incorrect attempts. Please contact support.</span>
             </div>
         );
     }
 
     return (
-        <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-                <LogOut size={16} className="text-orange-600" />
-                <p className="text-sm font-semibold text-orange-800">Verify Closing OTP (Departure)</p>
-                <span className="text-xs text-orange-500 ml-auto">{remaining} attempt{remaining !== 1 ? 's' : ''} remaining</span>
+        <div className="bg-orange-50/70 border border-orange-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center">
+                        <LogOut className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                        <h4 className="text-xs font-bold text-orange-900">Verify Departure Closing OTP</h4>
+                        <p className="text-[11px] text-orange-700">Driver is ready to depart. Enter the code they show you to release space.</p>
+                    </div>
+                </div>
+                <span className="text-[11px] font-semibold text-orange-800 bg-white px-2 py-0.5 rounded-md border border-orange-200">
+                    {remaining} attempt{remaining !== 1 ? 's' : ''} left
+                </span>
             </div>
-            <p className="text-xs text-orange-600 mb-3">Ask the driver for their 4-digit closing OTP and enter it below to confirm departure.</p>
 
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
                 <input
                     type="text"
                     inputMode="numeric"
                     maxLength={4}
                     value={otpInput}
-                    onChange={e => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="0000"
-                    className="w-28 text-center font-mono text-xl font-bold border-2 border-orange-300 rounded-lg p-2 focus:outline-none focus:border-orange-500 tracking-widest"
                     disabled={loading}
+                    className="w-28 text-center text-base font-bold font-mono tracking-widest bg-white border border-orange-200 rounded-xl py-2 px-3 text-[#1E2024] focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all disabled:opacity-50"
                 />
                 <button
+                    type="button"
                     onClick={handleVerify}
                     disabled={loading || otpInput.length < 4}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold text-sm transition"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
-                    {loading ? 'Verifying...' : 'Verify Closing OTP'}
+                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                    <span>{loading ? 'Verifying...' : 'Verify Departure OTP'}</span>
                 </button>
             </div>
 
             {otpError && (
-                <p className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
-                    {otpError}
-                </p>
+                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                    <span>{otpError}</span>
+                </div>
             )}
             {otpSuccess && (
-                <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
-                    {otpSuccess}
-                </p>
+                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                    <span>{otpSuccess}</span>
+                </div>
             )}
         </div>
     );
 };
 
-// ── Main Component ────────────────────────────────────────────────────────────
-
+// Main Component
 const OwnerBookings = () => {
     const [bookings, setBookings] = useState([]);
     const [stats, setStats] = useState({ todayRevenueEstimate: 0, activeOccupancy: 0, pendingRequests: 0 });
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [activeTab, setActiveTab] = useState('ALL');
+    const [viewMode, setViewMode] = useState('CARDS'); // 'CARDS' or 'CALENDAR'
     const [modalConfig, setModalConfig] = useState({ isOpen: false, type: '', bookingId: null });
+    const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => {
+        fetchData();
+    }, []);
 
     const fetchData = async () => {
+        setLoading(true);
+        setError('');
         try {
             const [bookRes, statsRes] = await Promise.all([
                 api.get('/bookings/owner'),
                 api.get('/bookings/owner/stats')
             ]);
-            if (bookRes.success) setBookings(bookRes.data);
-            if (statsRes.success) setStats(statsRes.data);
+            if (bookRes.success) setBookings(bookRes.data || []);
+            if (statsRes.success) setStats(statsRes.data || { todayRevenueEstimate: 0, activeOccupancy: 0, pendingRequests: 0 });
         } catch (err) {
-            setError("Failed to load dashboard data.");
+            setError(err.response?.data?.message || 'Failed to load booking requests.');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleActionClick = (id, type) => setModalConfig({ isOpen: true, type, bookingId: id });
+    const handleActionClick = (id, type) => {
+        setModalConfig({ isOpen: true, type, bookingId: id });
+    };
 
     const executeAction = async () => {
         const { type, bookingId } = modalConfig;
+        setIsSubmittingAction(true);
         try {
             const res = await api.put(`/bookings/${bookingId}/${type}`);
-            if (res.success) fetchData();
+            if (res.success) {
+                setModalConfig({ isOpen: false, type: '', bookingId: null });
+                fetchData();
+            } else {
+                alert(res.message || `Failed to ${type} booking.`);
+            }
         } catch (err) {
             alert(err.response?.data?.message || `Failed to ${type} booking.`);
         } finally {
-            setModalConfig({ isOpen: false, type: '', bookingId: null });
+            setIsSubmittingAction(false);
         }
     };
 
+    // Filter categories
+    const pendingBookings = bookings.filter((b) => b.status === 'PENDING');
+    const awaitingPaymentBookings = bookings.filter((b) => b.status === 'AWAITING_PAYMENT');
+    const confirmedBookings = bookings.filter((b) => b.status === 'CONFIRMED');
+    const activeBookings = bookings.filter((b) => b.status === 'ACTIVE');
+    const overstayBookings = bookings.filter((b) => b.status === 'OVERSTAY');
+    const completedBookings = bookings.filter((b) => b.status === 'COMPLETED');
+    const otherBookings = bookings.filter((b) => ['CANCELLED', 'REJECTED', 'AUTO_REJECTED'].includes(b.status));
+
+    const filteredBookings = bookings.filter((b) => {
+        if (activeTab === 'ALL') return true;
+        if (activeTab === 'PENDING') return b.status === 'PENDING';
+        if (activeTab === 'CONFIRMED') return b.status === 'CONFIRMED' || b.status === 'AWAITING_PAYMENT';
+        if (activeTab === 'ACTIVE') return b.status === 'ACTIVE' || b.status === 'OVERSTAY';
+        if (activeTab === 'COMPLETED') return b.status === 'COMPLETED';
+        if (activeTab === 'OTHER') return ['CANCELLED', 'REJECTED', 'AUTO_REJECTED'].includes(b.status);
+        return true;
+    });
+
+    // Calendar events
     const calendarEvents = bookings
-        .filter(b => ['CONFIRMED', 'ACTIVE', 'OVERSTAY', 'COMPLETED'].includes(b.status))
-        .map(b => ({
+        .filter((b) => ['CONFIRMED', 'ACTIVE', 'OVERSTAY', 'COMPLETED'].includes(b.status))
+        .map((b) => ({
             id: b.id,
-            title: `${b.parkingSpaceTitle} — ${b.driverName}${b.status === 'OVERSTAY' ? ' ⚠ OVERSTAY' : ''}`,
+            title: `${b.parkingSpaceTitle} \u2014 ${b.driverName}${b.status === 'OVERSTAY' ? ' \u26A0 OVERSTAY' : ''}`,
             start: new Date(b.startTime),
             end: new Date(b.endTime),
-            resource: b,
+            resource: b
         }));
 
-    const pendingBookings = bookings.filter(b => b.status === 'PENDING');
-    const confirmedBookings = bookings.filter(b => b.status === 'CONFIRMED');
-    const activeBookings = bookings.filter(b => b.status === 'ACTIVE');
-    const overstayBookings = bookings.filter(b => b.status === 'OVERSTAY');
-    const completedBookings = bookings.filter(b => b.status === 'COMPLETED');
-
     return (
-        <div className="max-w-7xl mx-auto p-6 md:p-8">
-            <h1 className="text-4xl font-extrabold mb-8 text-gray-800">Booking Management</h1>
-            {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6">{error}</div>}
+        <div className="max-w-7xl mx-auto space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-[#1E2024]">Booking Requests & Schedule</h1>
+                    <p className="text-xs text-[#666970] mt-1">
+                        Review incoming requests, verify driver arrival & closing OTPs, and track space occupancy.
+                    </p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                    {/* View Switcher */}
+                    <div className="flex items-center p-1 bg-[#EAEAE7]/60 rounded-xl border border-[#EAEAE7]">
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('CARDS')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                viewMode === 'CARDS' ? 'bg-white text-[#1E2024] shadow-xs' : 'text-[#666970] hover:text-[#1E2024]'
+                            }`}
+                        >
+                            <ListFilter className="w-3.5 h-3.5" />
+                            <span>Cards</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('CALENDAR')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                viewMode === 'CALENDAR' ? 'bg-white text-[#1E2024] shadow-xs' : 'text-[#666970] hover:text-[#1E2024]'
+                            }`}
+                        >
+                            <CalendarDays className="w-3.5 h-3.5" />
+                            <span>Calendar</span>
+                        </button>
+                    </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-                    <div className="p-4 bg-green-100 text-green-600 rounded-lg"><DollarSign size={32} /></div>
-                    <div>
-                        <p className="text-gray-500 text-sm uppercase tracking-wide">Today's Revenue</p>
-                        <p className="text-3xl font-bold text-gray-800">{formatINR(stats.todayRevenueEstimate)}</p>
+                    <button
+                        type="button"
+                        onClick={fetchData}
+                        disabled={loading}
+                        className="p-2 rounded-xl border border-[#EAEAE7] bg-white hover:bg-gray-50 text-[#1E2024] transition-colors cursor-pointer"
+                        title="Refresh Bookings"
+                    >
+                        <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#2554D7]' : 'text-gray-500'}`} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Error Notification */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-2xl text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                        <span>{error}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={fetchData}
+                        className="underline font-semibold hover:text-red-800 cursor-pointer"
+                    >
+                        Retry
+                    </button>
+                </div>
+            )}
+
+            {/* KPI Metric Summary Cards (Real Backend Data) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-5 shadow-xs flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
+                        <Clock className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                        <span className="text-[11px] font-semibold text-[#666970] uppercase tracking-wider block">
+                            Pending Requests
+                        </span>
+                        <p className="text-xl font-bold text-[#1E2024] truncate">
+                            {stats.pendingRequests ?? pendingBookings.length}
+                        </p>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-                    <div className="p-4 bg-blue-100 text-blue-600 rounded-lg"><Users size={32} /></div>
-                    <div>
-                        <p className="text-gray-500 text-sm uppercase tracking-wide">Active Occupancy</p>
-                        <p className="text-3xl font-bold text-gray-800">{stats.activeOccupancy} <span className="text-lg font-medium text-gray-500">spaces</span></p>
+
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-5 shadow-xs flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-700 shrink-0">
+                        <Car className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                        <span className="text-[11px] font-semibold text-[#666970] uppercase tracking-wider block">
+                            Active Occupancy
+                        </span>
+                        <p className="text-xl font-bold text-[#1E2024] truncate">
+                            {stats.activeOccupancy ?? (activeBookings.length + overstayBookings.length)}{' '}
+                            <span className="text-xs font-normal text-[#666970]">spaces</span>
+                        </p>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-                    <div className="p-4 bg-yellow-100 text-yellow-600 rounded-lg"><Bell size={32} /></div>
-                    <div>
-                        <p className="text-gray-500 text-sm uppercase tracking-wide">Pending Requests</p>
-                        <p className="text-3xl font-bold text-gray-800">{stats.pendingRequests}</p>
+
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-5 shadow-xs flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                        <TrendingUp className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                        <span className="text-[11px] font-semibold text-[#666970] uppercase tracking-wider block">
+                            Today's Revenue
+                        </span>
+                        <p className="text-xl font-bold text-[#1E2024] truncate">
+                            {formatINR(stats.todayRevenueEstimate)}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-5 shadow-xs flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#2554D7] shrink-0">
+                        <CalendarIcon className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                        <span className="text-[11px] font-semibold text-[#666970] uppercase tracking-wider block">
+                            Total Bookings
+                        </span>
+                        <p className="text-xl font-bold text-[#1E2024] truncate">
+                            {bookings.length}
+                        </p>
                     </div>
                 </div>
             </div>
 
-            {/* Pending Requests */}
-            {pendingBookings.length > 0 && (
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6">Booking Requests</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {pendingBookings.map(b => (
-                            <div key={b.id} className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl flex justify-between items-center shadow-sm">
-                                <div>
-                                    <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
-                                    <p className="text-gray-600 text-sm mb-2">Requested by <span className="font-semibold">{b.driverName}</span></p>
-                                    <p className="text-sm text-gray-700">
-                                        {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} <br/>to<br/>
-                                        {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                    </p>
-                                    <p className="font-bold text-blue-600 mt-2">₹{b.totalPrice.toFixed(2)}</p>
+            {/* Main Content Area */}
+            {viewMode === 'CALENDAR' ? (
+                /* Calendar View */
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-base font-bold text-[#1E2024]">Space Reservation Calendar</h3>
+                            <p className="text-xs text-[#666970]">Visualize scheduled and active driver bookings across your parking slots</p>
+                        </div>
+                    </div>
+                    <div style={{ height: '620px' }}>
+                        <Calendar
+                            localizer={localizer}
+                            events={calendarEvents}
+                            startAccessor="start"
+                            endAccessor="end"
+                            views={['month', 'week', 'day']}
+                            defaultView="month"
+                            eventPropGetter={(event) => ({
+                                style: {
+                                    backgroundColor: event.resource?.status === 'OVERSTAY' ? '#DC2626' : '#2554D7',
+                                    borderRadius: '6px',
+                                    padding: '2px 6px',
+                                    fontSize: '11px',
+                                    fontWeight: '600',
+                                    color: '#FFFFFF',
+                                    border: 'none'
+                                }
+                            })}
+                        />
+                    </div>
+                </div>
+            ) : (
+                /* Cards View */
+                <div className="space-y-4">
+                    {/* Filter Tabs */}
+                    <div className="flex items-center gap-1.5 p-1 bg-[#EAEAE7]/60 rounded-2xl border border-[#EAEAE7] overflow-x-auto">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('ALL')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                activeTab === 'ALL' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            All ({bookings.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('PENDING')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                                activeTab === 'PENDING' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            <span>Requests</span>
+                            {pendingBookings.length > 0 && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                    activeTab === 'PENDING' ? 'bg-white text-[#2554D7]' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                    {pendingBookings.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('CONFIRMED')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                activeTab === 'CONFIRMED' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            Awaiting Arrival ({confirmedBookings.length + awaitingPaymentBookings.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('ACTIVE')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                activeTab === 'ACTIVE' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            Parked / Active ({activeBookings.length + overstayBookings.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('COMPLETED')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                activeTab === 'COMPLETED' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            Completed ({completedBookings.length})
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('OTHER')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                                activeTab === 'OTHER' ? 'bg-[#2554D7] text-white shadow-xs' : 'text-[#666970] hover:text-[#1E2024] hover:bg-white'
+                            }`}
+                        >
+                            Other ({otherBookings.length})
+                        </button>
+                    </div>
+
+                    {/* Booking Cards Listing */}
+                    {loading ? (
+                        <div className="space-y-4">
+                            {[1, 2, 3].map((n) => (
+                                <div key={n} className="bg-white rounded-2xl border border-[#EAEAE7] p-6 space-y-4 animate-pulse">
+                                    <div className="flex justify-between items-start">
+                                        <div className="space-y-2 w-1/2">
+                                            <div className="h-5 bg-[#F8F8F6] rounded-md w-3/4" />
+                                            <div className="h-4 bg-[#F8F8F6] rounded-md w-1/2" />
+                                        </div>
+                                        <div className="h-6 bg-[#F8F8F6] rounded-full w-24" />
+                                    </div>
+                                    <div className="h-16 bg-[#F8F8F6] rounded-xl" />
                                 </div>
-                                <div className="flex flex-col gap-3">
-                                    <button
-                                        onClick={() => handleActionClick(b.id, 'accept')}
-                                        className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-semibold transition"
+                            ))}
+                        </div>
+                    ) : filteredBookings.length === 0 ? (
+                        /* Empty State */
+                        <div className="bg-white rounded-2xl border border-[#EAEAE7] p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xs space-y-4">
+                            <div className="w-14 h-14 rounded-2xl bg-[#EEF2FD] border border-[#D5E0FA] flex items-center justify-center mx-auto text-[#2554D7]">
+                                <CalendarIcon className="w-7 h-7" />
+                            </div>
+                            <h3 className="text-base font-bold text-[#1E2024]">No Bookings Found</h3>
+                            <p className="text-xs text-[#666970] leading-relaxed max-w-sm mx-auto">
+                                {activeTab === 'ALL'
+                                    ? "You haven't received any booking requests yet. Once drivers book your spaces, their sessions will appear here."
+                                    : `There are currently no bookings under the ${activeTab.toLowerCase()} category.`}
+                            </p>
+                        </div>
+                    ) : (
+                        /* Populated Booking Cards */
+                        <div className="space-y-4">
+                            {filteredBookings.map((b) => {
+                                const isPending = b.status === 'PENDING';
+                                const isConfirmed = b.status === 'CONFIRMED';
+                                const isActive = b.status === 'ACTIVE';
+                                const isOverstay = b.status === 'OVERSTAY';
+                                const isCompleted = b.status === 'COMPLETED';
+
+                                // Overstay calculation
+                                const overstayStarted = b.overstayStartedAt ? new Date(b.overstayStartedAt) : null;
+                                const overstayMinutes = overstayStarted
+                                    ? Math.max(0, Math.floor((new Date() - overstayStarted) / 60000))
+                                    : 0;
+                                const ratePerMinute = (b.totalPrice || 50) / 60;
+                                const liveOverstayCharge = (overstayMinutes * ratePerMinute).toFixed(2);
+
+                                return (
+                                    <div
+                                        key={b.id}
+                                        className={`bg-white rounded-2xl border p-5 sm:p-6 shadow-xs hover:shadow-sm transition-all space-y-4 ${
+                                            isPending
+                                                ? 'border-amber-300 ring-1 ring-amber-100'
+                                                : isOverstay
+                                                ? 'border-rose-300 ring-1 ring-rose-100'
+                                                : 'border-[#EAEAE7]'
+                                        }`}
                                     >
-                                        <CheckCircle size={18} /> Accept
-                                    </button>
-                                    <button
-                                        onClick={() => handleActionClick(b.id, 'reject')}
-                                        className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold transition"
-                                    >
-                                        <XCircle size={18} /> Reject
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                                        {/* Card Top Row */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="font-bold text-base text-[#1E2024]">
+                                                        {b.parkingSpaceTitle}
+                                                    </h3>
+                                                    <span className="text-[11px] font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
+                                                        #BK-{b.id}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-[#666970] flex items-center gap-1.5">
+                                                    <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                                    <span>Driver: <strong className="text-[#1E2024]">{b.driverName}</strong></span>
+                                                    {b.parkingSpaceAddress && (
+                                                        <>
+                                                            <span className="text-gray-300">\u2022</span>
+                                                            <span className="truncate max-w-xs">{b.parkingSpaceAddress}</span>
+                                                        </>
+                                                    )}
+                                                </p>
+                                            </div>
+
+                                            <div className="flex items-center gap-3 self-start sm:self-auto">
+                                                <StatusBadge status={b.status} />
+                                            </div>
+                                        </div>
+
+                                        {/* Details Row: Timing & Financials */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-[#F8F8F6] p-3.5 rounded-xl border border-[#EAEAE7]/80 text-xs">
+                                            <div className="space-y-1">
+                                                <span className="text-[10px] uppercase font-bold text-gray-600 tracking-wider flex items-center gap-1">
+                                                    <Clock className="w-3 h-3 text-gray-400" /> Reserved Time
+                                                </span>
+                                                <p className="font-semibold text-[#1E2024]">
+                                                    {new Date(b.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </p>
+                                                <p className="text-[#666970]">
+                                                    to {new Date(b.endTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <span className="text-[10px] uppercase font-bold text-gray-600 tracking-wider">
+                                                    Total Booking Price
+                                                </span>
+                                                <p className="text-base font-extrabold text-[#2554D7]">
+                                                    {formatINR(b.totalPrice)}
+                                                </p>
+                                                <p className="text-[11px] text-[#666970]">
+                                                    Rate: 10% platform fee applicable
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+                                                <span className="text-[10px] uppercase font-bold text-gray-600 tracking-wider">
+                                                    Session State
+                                                </span>
+                                                <p className="text-xs text-[#1E2024] font-medium">
+                                                    {isPending && 'Waiting for your acceptance'}
+                                                    {b.status === 'AWAITING_PAYMENT' && 'Accepted \u2014 waiting for driver payment'}
+                                                    {isConfirmed && 'Paid \u2014 awaiting driver check-in'}
+                                                    {isActive && (b.checkoutInitiated ? 'Checkout initiated by driver' : 'Vehicle currently parked')}
+                                                    {isOverstay && `Overstay: ${overstayMinutes} min past scheduled time`}
+                                                    {isCompleted && 'Session closed & settled'}
+                                                    {['CANCELLED', 'REJECTED', 'AUTO_REJECTED'].includes(b.status) && 'Closed / Released'}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Contextual Action Panels */}
+                                        {b.status === 'AWAITING_PAYMENT' && (
+                                            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-blue-800">
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                                    <span>You accepted this request. Waiting for the driver to complete payment to lock arrival OTP.</span>
+                                                </div>
+                                                <span className="text-[11px] font-semibold text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200 shrink-0">
+                                                    Awaiting Payment
+                                                </span>
+                                            </div>
+                                        )}
+
+                                        {/* 1. Pending: Accept / Reject Buttons */}
+                                        {isPending && (
+                                            <div className="pt-2 border-t border-[#EAEAE7] flex flex-wrap items-center justify-between gap-3">
+                                                <p className="text-xs text-amber-800 font-medium flex items-center gap-1.5">
+                                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                    <span>Accept request to lock dates and allow driver payment.</span>
+                                                </p>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleActionClick(b.id, 'reject')}
+                                                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors cursor-pointer"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                        <span>Reject</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleActionClick(b.id, 'accept')}
+                                                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                        <span>Accept Booking</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* 2. Confirmed: Awaiting Driver Arrival OTP */}
+                                        {isConfirmed && (
+                                            <OtpVerifyPanel booking={b} onSuccess={fetchData} />
+                                        )}
+
+                                        {/* 3. Active: Occupied Space */}
+                                        {isActive && (
+                                            <div>
+                                                {!b.checkoutInitiated ? (
+                                                    <div className="bg-[#F8F8F6] border border-[#EAEAE7] rounded-xl p-3.5 flex items-center justify-between text-xs text-[#666970]">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                            <span>Vehicle is parked. Scheduled checkout: <strong>{new Date(b.endTime).toLocaleTimeString([], { timeStyle: 'short' })}</strong></span>
+                                                        </div>
+                                                        <span className="text-[11px] text-gray-500">Waiting for driver departure...</span>
+                                                    </div>
+                                                ) : (
+                                                    <ClosingOtpVerifyPanel booking={b} onSuccess={fetchData} />
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* 4. Overstay: Urgent Attention */}
+                                        {isOverstay && (
+                                            <div className="space-y-3">
+                                                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                                    <div className="space-y-0.5">
+                                                        <span className="font-bold text-rose-900 flex items-center gap-1.5">
+                                                            <AlertTriangle className="w-4 h-4 text-rose-600" />
+                                                            Driver Exceeded Scheduled Time ({overstayMinutes} min)
+                                                        </span>
+                                                        <p className="text-rose-700 text-[11px]">
+                                                            Scheduled departure was {new Date(b.endTime).toLocaleTimeString([], { timeStyle: 'short' })}.
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-left sm:text-right">
+                                                        <span className="text-[10px] uppercase font-bold text-rose-600 block">Accumulated Extra</span>
+                                                        <span className="text-base font-extrabold text-rose-900">{formatINR(liveOverstayCharge)}</span>
+                                                    </div>
+                                                </div>
+                                                <ClosingOtpVerifyPanel booking={b} onSuccess={fetchData} />
+                                            </div>
+                                        )}
+
+                                        {/* 5. Completed: Financial Settlement Breakdown */}
+                                        {isCompleted && (
+                                            <div className="bg-[#F8F8F6] border border-[#EAEAE7] rounded-xl p-3.5 space-y-2 text-xs">
+                                                <div className="flex justify-between items-center text-[#666970]">
+                                                    <span>Original Booking Paid:</span>
+                                                    <span className="font-semibold text-[#1E2024]">{formatINR(b.totalPrice)}</span>
+                                                </div>
+                                                {b.actualUsageCharge != null && (
+                                                    <div className="flex justify-between items-center text-[#666970]">
+                                                        <span>Actual Usage Charge:</span>
+                                                        <span className="font-semibold text-[#2554D7]">{formatINR(b.actualUsageCharge)}</span>
+                                                    </div>
+                                                )}
+                                                {b.refundAdjustment != null && b.refundAdjustment > 0.01 && (
+                                                    <div className="flex justify-between items-center text-blue-700 bg-blue-50/80 px-2.5 py-1 rounded-md">
+                                                        <span>Early Checkout Refund:</span>
+                                                        <span className="font-semibold">+{formatINR(b.refundAdjustment)}</span>
+                                                    </div>
+                                                )}
+                                                {b.overstayExtraCharge > 0 && (
+                                                    <div className="flex justify-between items-center text-rose-700 bg-rose-50/80 px-2.5 py-1 rounded-md">
+                                                        <span>Overstay Charge ({b.overstayPaymentStatus || 'PENDING'}):</span>
+                                                        <span className="font-semibold">+{formatINR(b.overstayExtraCharge)}</span>
+                                                    </div>
+                                                )}
+                                                {b.actualClosedAt && (
+                                                    <div className="text-[11px] text-gray-500 pt-1 border-t border-[#EAEAE7]">
+                                                        Closed at: {new Date(b.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* PRD v1.0 Slice 2: Confirmed Bookings – Opening OTP Verification */}
-            {confirmedBookings.length > 0 && (
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
-                        <Key size={24} className="text-blue-600" /> Awaiting Driver Arrival
-                    </h2>
-                    <p className="text-sm text-gray-500 mb-4">
-                        These bookings are paid and confirmed. When the driver arrives, ask for their opening OTP and verify it below.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {confirmedBookings.map(b => (
-                            <div key={b.id} className="bg-green-50 border border-green-200 p-6 rounded-xl shadow-sm">
-                                <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
-                                <p className="text-gray-600 text-sm mb-1">Driver: <span className="font-semibold">{b.driverName}</span></p>
-                                <p className="text-sm text-gray-700 mb-1">
-                                    {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} →{' '}
-                                    {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                </p>
-                                <p className="font-bold text-blue-600 mb-2">{formatINR(b.totalPrice)}</p>
-                                {/* Opening OTP panel – OTP value never shown to owner */}
-                                <OtpVerifyPanel booking={b} onSuccess={fetchData} />
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* ACTIVE Bookings – Driver is currently parked – awaiting departure */}
-            {activeBookings.length > 0 && (
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
-                        <Key size={24} className="text-purple-600" /> Currently Occupied
-                    </h2>
-                    <p className="text-sm text-gray-500 mb-4">
-                        These drivers are currently parked. When they are ready to leave, they will initiate checkout and show you a closing OTP.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {activeBookings.map(b => (
-                            <div key={b.id} className="bg-purple-50 border border-purple-200 p-6 rounded-xl shadow-sm">
-                                <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
-                                <p className="text-gray-600 text-sm mb-1">Driver: <span className="font-semibold">{b.driverName}</span></p>
-                                <p className="text-sm text-gray-700 mb-1">
-                                    {new Date(b.startTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} →{' '}
-                                    {new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                </p>
-                                <p className="font-bold text-blue-600 mb-2">{formatINR(b.totalPrice)}</p>
-                                {!b.checkoutInitiated ? (
-                                    <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-600 flex items-center gap-2">
-                                        <Key size={14} className="text-gray-400" />
-                                        Waiting for driver to initiate departure...
-                                    </div>
-                                ) : (
-                                    <ClosingOtpVerifyPanel booking={b} onSuccess={fetchData} />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* OVERSTAY Bookings – Driver exceeded scheduled time */}
-            {overstayBookings.length > 0 && (
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold text-red-800 border-b border-red-300 pb-3 mb-6 flex items-center gap-2">
-                        <AlertTriangle size={24} className="text-red-600" /> Overstay — Immediate Attention Required
-                    </h2>
-                    <p className="text-sm text-red-600 mb-4">
-                        These drivers have exceeded their scheduled departure time. Extra charges are accumulating. Ask them to provide their closing OTP immediately.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {overstayBookings.map(b => {
-                            const overstayStarted = b.overstayStartedAt ? new Date(b.overstayStartedAt) : null;
-                            const overstayMinutes = overstayStarted
-                                ? Math.max(0, Math.floor((new Date() - overstayStarted) / 60000))
-                                : 0;
-                            const ratePerMinute = b.totalPrice / 60;
-                            const liveCharge = (overstayMinutes * ratePerMinute).toFixed(2);
-
-                            return (
-                                <div key={b.id} className="bg-red-50 border-2 border-red-400 p-6 rounded-xl shadow-sm">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
-                                        <span className="px-2 py-0.5 bg-red-200 text-red-900 rounded-full text-xs font-bold">⚠ OVERSTAY</span>
-                                    </div>
-                                    <p className="text-gray-600 text-sm mb-1">Driver: <span className="font-semibold">{b.driverName}</span></p>
-                                    <p className="text-sm text-gray-700 mb-1">
-                                        Scheduled end: <strong>{new Date(b.endTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</strong>
-                                    </p>
-                                    <div className="flex items-center justify-between mt-2 mb-3">
-                                        <div>
-                                            <p className="text-xs text-red-600">Overstay: <strong>{overstayMinutes} min</strong></p>
-                                            <p className="text-xs text-blue-700">Base: {formatINR(b.totalPrice)}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-red-500 uppercase">Extra Charge</p>
-                                            <p className="text-2xl font-extrabold text-red-700">{formatINR(liveCharge)}</p>
-                                        </div>
-                                    </div>
-                                    <ClosingOtpVerifyPanel booking={b} onSuccess={fetchData} />
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* COMPLETED Bookings */}
-            {completedBookings.length > 0 && (
-                <div className="mb-12">
-                    <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
-                        <CheckCircle size={24} className="text-green-600" /> Completed Bookings
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {completedBookings.map(b => (
-                            <div key={b.id} className="bg-white border border-gray-200 p-6 rounded-xl shadow-sm">
-                                <h3 className="font-bold text-lg text-gray-800">{b.parkingSpaceTitle}</h3>
-                                <p className="text-gray-600 text-sm mb-2">Driver: <span className="font-semibold">{b.driverName}</span></p>
-                                <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-100 space-y-1 mb-3">
-                                    <div className="flex justify-between">
-                                        <span>Original Booking:</span>
-                                        <span className="font-semibold text-gray-800">{formatINR(b.totalPrice)} (PAID ✓)</span>
-                                    </div>
-                                    {b.actualUsageCharge != null && (
-                                        <div className="flex justify-between">
-                                            <span>Actual Usage Charge:</span>
-                                            <span className="font-semibold text-blue-700">{formatINR(b.actualUsageCharge)}</span>
-                                        </div>
-                                    )}
-                                    {b.refundAdjustment != null && b.refundAdjustment > 0.01 && (
-                                        <div className="flex justify-between text-blue-700">
-                                            <span>Refund Adjustment:</span>
-                                            <span className="font-semibold">+{formatINR(b.refundAdjustment)} (Pending)</span>
-                                        </div>
-                                    )}
-                                    {b.overstayExtraCharge > 0 && (
-                                        <div className="flex justify-between">
-                                            <span>Overstay Charge:</span>
-                                            <span className="font-semibold text-red-600">
-                                                {formatINR(b.overstayExtraCharge)} ({b.overstayPaymentStatus === 'SUCCESS' || b.overstayPaymentStatus === 'PAID' ? 'PAID ✓' : 'PENDING ⚠️'})
-                                            </span>
-                                        </div>
-                                    )}
-                                    <div className="flex justify-between font-bold border-t pt-1">
-                                        <span>Final Amount:</span>
-                                        <span className="text-blue-600">{formatINR(b.actualUsageCharge ?? ((b.totalPrice || 0) + (b.overstayExtraCharge || 0)))}</span>
-                                    </div>
-                                </div>
-                                {b.actualClosedAt && (
-                                    <p className="text-xs text-gray-500">
-                                        Closed at: {new Date(b.actualClosedAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                                    </p>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Calendar View */}
-            <div>
-                <h2 className="text-2xl font-bold text-gray-800 border-b pb-3 mb-6">Reservation Calendar</h2>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200" style={{ height: '600px' }}>
-                    <Calendar
-                        localizer={localizer}
-                        events={calendarEvents}
-                        startAccessor="start"
-                        endAccessor="end"
-                        views={['month', 'week', 'day']}
-                        defaultView="month"
-                        eventPropGetter={(event) => ({
-                            style: {
-                                backgroundColor: event.resource?.status === 'OVERSTAY' ? '#dc2626' : '#2563eb',
-                                borderRadius: '4px',
-                                opacity: 0.9,
-                                color: 'white',
-                                border: '0',
-                                display: 'block'
-                            }
-                        })}
-                    />
-                </div>
-            </div>
-
+            {/* Confirmation Modal for Accept/Reject */}
             <ConfirmationModal
                 isOpen={modalConfig.isOpen}
-                title={modalConfig.type === 'accept' ? 'Accept Booking' : 'Reject Booking'}
-                message={modalConfig.type === 'accept'
-                    ? "Are you sure you want to accept this booking request? The driver will be notified and the dates will be locked."
-                    : "Are you sure you want to reject this request? The driver will be notified."}
+                title={modalConfig.type === 'accept' ? 'Accept Booking Request' : 'Reject Booking Request'}
+                message={
+                    modalConfig.type === 'accept'
+                        ? 'Are you sure you want to accept this reservation? The driver will be notified immediately to complete payment, locking the slot.'
+                        : 'Are you sure you want to reject this reservation? The driver will be notified and the reservation will be marked as rejected.'
+                }
                 onConfirm={executeAction}
                 onCancel={() => setModalConfig({ isOpen: false, type: '', bookingId: null })}
                 isDestructive={modalConfig.type === 'reject'}
-                confirmText={modalConfig.type === 'accept' ? "Yes, Accept" : "Yes, Reject"}
+                confirmText={modalConfig.type === 'accept' ? 'Yes, Accept Booking' : 'Yes, Reject Booking'}
             />
         </div>
     );

@@ -1,24 +1,58 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+﻿import React, { useState, useEffect, useContext } from 'react';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import api from '../services/api';
 import { AuthContext } from '../context/AuthContext';
+import {
+    ArrowLeft,
+    MapPin,
+    Car,
+    ShieldCheck,
+    Zap,
+    Building2,
+    Warehouse,
+    UserCheck,
+    Clock,
+    AlertCircle,
+    CheckCircle2,
+    Calendar,
+    ArrowRight,
+    Loader2,
+    AlertTriangle,
+    Info,
+    Sparkles
+} from 'lucide-react';
 
-// ─── PRD v1.0 date-window helpers ───────────────────────────────────────────
+// Leaflet icon default fix
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
-/** Returns the current time + 1 minute as a datetime-local string (browser local).
- *  Used as the `min` attribute so drivers cannot pick a start time in the past. */
+// Red pin for parking spot
+const redMarkerIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+});
+
+// PRD v1.0 date-window helpers: today now through tomorrow 23:59
 const getTodayMin = () => {
     const now = new Date();
     now.setSeconds(0, 0);
     now.setMinutes(now.getMinutes() + 1);
-    // toISOString returns UTC — convert to local ISO-like string
     const offset = now.getTimezoneOffset();
     const local = new Date(now.getTime() - offset * 60000);
     return local.toISOString().slice(0, 16);
 };
 
-/** Returns tomorrow at 23:59 local time as a datetime-local string.
- *  Used as the `max` attribute to prevent bookings beyond tomorrow. */
 const getTomorrowMax = () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -28,98 +62,111 @@ const getTomorrowMax = () => {
     return local.toISOString().slice(0, 16);
 };
 
-// ─── v1.1: Occupancy helpers ─────────────────────────────────────────────────
-
-/**
- * Returns true if the space is currently occupied (CONFIRMED / ACTIVE / OVERSTAY).
- */
+// Occupancy helpers
 const isSpaceOccupied = (currentOccupancyStatus) =>
     currentOccupancyStatus === 'CONFIRMED' ||
     currentOccupancyStatus === 'ACTIVE' ||
     currentOccupancyStatus === 'OVERSTAY';
 
-/**
- * Returns a human-readable occupancy message and severity level.
- */
 const getOccupancyInfo = (currentOccupancyStatus) => {
     switch (currentOccupancyStatus) {
         case 'OVERSTAY':
             return {
-                label: '🔴 Currently Occupied — Overstay in Progress',
-                detail: 'The current driver has exceeded their booking time and has not yet completed checkout. This space will be released only after the driver completes the Closing OTP process.',
-                color: 'red',
+                title: 'Overstay in Progress',
+                detail: 'The current driver has exceeded their booking duration. The space will be released once closing checkout completes.',
+                type: 'error'
             };
         case 'ACTIVE':
             return {
-                label: '🔴 Currently Occupied — Driver is Parked',
-                detail: 'A driver is currently using this space. It will become available after they complete their checkout.',
-                color: 'red',
+                title: 'Driver Currently Parked',
+                detail: 'A driver is currently parked in this spot. It will be released when checkout is completed.',
+                type: 'error'
             };
         case 'CONFIRMED':
             return {
-                label: '🟡 Reserved — Awaiting Driver Arrival',
-                detail: 'This space has an upcoming confirmed booking. Please choose a different time slot or check back later.',
-                color: 'yellow',
+                title: 'Reserved â€” Awaiting Driver Arrival',
+                detail: 'This space has an upcoming confirmed reservation. You may select an alternative time slot.',
+                type: 'warning'
             };
         default:
             return null;
     }
 };
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 const ParkingSpaceDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const { user } = useContext(AuthContext);
+
     const [space, setSpace] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState('');
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
-    const [error, setError] = useState('');
+    const [bookingError, setBookingError] = useState('');
+    const [submitting, setSubmitting] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
 
-    // Allowed booking window — today now → tomorrow 23:59
+    // Allowed booking window: now through tomorrow 23:59
     const minDateTime = getTodayMin();
     const maxDateTime = getTomorrowMax();
 
     useEffect(() => {
         const fetchSpace = async () => {
+            setLoading(true);
+            setFetchError('');
             try {
                 const res = await api.get(`/parking/public/${id}`);
-                if (res.success) setSpace(res.data);
+                if (res.success) {
+                    setSpace(res.data);
+                } else {
+                    setFetchError('Failed to load parking space details.');
+                }
             } catch (err) {
-                setError("Failed to load parking space details");
+                setFetchError(err.response?.data?.message || 'Failed to load parking space details. Please try again.');
+            } finally {
+                setLoading(false);
             }
         };
         fetchSpace();
     }, [id]);
 
-    const calculatePrice = () => {
-        if (!startTime || !endTime || !space) return 0;
+    // Calculate duration in hours and total price
+    const getBookingCalculation = () => {
+        if (!startTime || !endTime || !space) return { hours: 0, totalPrice: 0, isValidRange: false };
         const start = new Date(startTime);
         const end = new Date(endTime);
-        const diffHours = (end - start) / (1000 * 60 * 60);
-        if (diffHours <= 0) return 0;
+        const diffMs = end - start;
+        if (diffMs <= 0) return { hours: 0, totalPrice: 0, isValidRange: false };
+        const diffHours = diffMs / (1000 * 60 * 60);
         const billedHours = Math.max(1, Math.ceil(diffHours));
-        return billedHours * space.pricePerHour;
+        const totalPrice = billedHours * space.pricePerHour;
+        return { hours: billedHours, totalPrice, isValidRange: true };
     };
 
     const handleBooking = async (e) => {
         e.preventDefault();
-        setError('');
+        setBookingError('');
 
+        // Unauthenticated visitor -> send to login preserving destination
         if (!user) {
-            navigate('/login');
+            navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`, {
+                state: { redirect: location.pathname }
+            });
             return;
         }
 
-        // ── v1.1: Block booking if space is currently occupied ──────────────
+        if (user.role === 'OWNER') {
+            setBookingError('Space owners cannot book parking spots. Please switch to a driver account.');
+            return;
+        }
+
         if (isSpaceOccupied(space?.currentOccupancyStatus)) {
-            setError('This parking space is currently occupied. Please try again later.');
+            setBookingError('This parking space is currently occupied. Please choose another time or spot.');
             return;
         }
 
-        // ── PRD v1.0 client-side pre-validation ────────────────────────────
         const now = new Date();
         const start = new Date(startTime);
         const end = new Date(endTime);
@@ -128,23 +175,19 @@ const ParkingSpaceDetails = () => {
         tomorrowEnd.setHours(23, 59, 59, 999);
 
         if (start <= now) {
-            setError('Start time must be in the future.');
+            setBookingError('Start time must be in the future.');
             return;
         }
         if (end <= start) {
-            setError('End time must be after start time.');
+            setBookingError('End time must be after start time.');
             return;
         }
-        if (start > tomorrowEnd) {
-            setError('Bookings are only allowed for today or tomorrow.');
+        if (start > tomorrowEnd || end > tomorrowEnd) {
+            setBookingError('Bookings are only allowed for today or tomorrow.');
             return;
         }
-        if (end > tomorrowEnd) {
-            setError('End time must fall within today or tomorrow.');
-            return;
-        }
-        // ───────────────────────────────────────────────────────────────────
 
+        setSubmitting(true);
         try {
             const res = await api.post('/bookings', {
                 parkingSpaceId: space.id,
@@ -153,190 +196,392 @@ const ParkingSpaceDetails = () => {
             });
             if (res.success) {
                 setBookingSuccess(true);
-                setTimeout(() => navigate('/driver/bookings'), 2000);
+                setTimeout(() => navigate('/driver/bookings'), 1500);
+            } else {
+                setBookingError(res.message || 'Failed to create booking.');
             }
         } catch (err) {
-            setError(err.response?.data?.message || "Failed to create booking");
+            setBookingError(err.response?.data?.message || 'Failed to create booking. Please try again.');
+        } finally {
+            setSubmitting(false);
         }
     };
 
-    if (!space) return <div className="p-8 text-center text-gray-500">Loading...</div>;
-
-    const totalPrice = calculatePrice();
-    const occupied = isSpaceOccupied(space.currentOccupancyStatus);
-    const occupancyInfo = getOccupancyInfo(space.currentOccupancyStatus);
-
-    return (
-        <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-8 mt-6">
-            <div className="md:col-span-2 space-y-6">
-                <div className="flex items-start gap-4">
-                    <h1 className="text-4xl font-extrabold text-gray-800 flex-1">{space.title}</h1>
-                    {/* v1.1: Live occupancy badge next to title */}
-                    {occupied ? (
-                        <span className="mt-1 shrink-0 px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-700 border border-red-200">
-                            🔴 Occupied
-                        </span>
-                    ) : (
-                        <span className="mt-1 shrink-0 px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-700 border border-green-200">
-                            🟢 Available
-                        </span>
-                    )}
-                </div>
-                <p className="text-gray-500 text-lg">{space.address}, {space.city} {space.zipCode}</p>
-
-                {/* v1.1: Live occupancy banner */}
-                {occupancyInfo && (
-                    <div className={`rounded-xl p-4 border ${
-                        occupancyInfo.color === 'red'
-                            ? 'bg-red-50 border-red-200 text-red-800'
-                            : 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                    }`}>
-                        <p className="font-bold text-base mb-1">{occupancyInfo.label}</p>
-                        <p className="text-sm">{occupancyInfo.detail}</p>
-                    </div>
-                )}
-
-                {space.images?.length > 0 ? (
-                    <img src={space.images[0]} alt="Parking Space" className="w-full h-96 object-cover rounded-xl shadow-lg" />
-                ) : (
-                    <div className="w-full h-96 bg-gray-200 rounded-xl flex items-center justify-center text-gray-500 shadow-inner">No Image Available</div>
-                )}
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h2 className="text-2xl font-bold mb-4">Description</h2>
-                    <p className="text-gray-700 leading-relaxed">{space.description || "No description provided."}</p>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h2 className="text-2xl font-bold mb-4">Features</h2>
-                    <ul className="grid grid-cols-2 gap-4 text-gray-700">
-                        <li><span className="font-semibold">Vehicle Type:</span> {space.vehicleType}</li>
-                        <li><span className="font-semibold">Property:</span> {space.propertyType === 'HOUSE' ? '🏠 House' : '🏢 Apartment'}</li>
-                        <li><span className="font-semibold">Covered:</span> {space.covered ? "Yes" : "No"}</li>
-                        <li><span className="font-semibold">EV Charging:</span> {space.evCharging ? "Yes" : "No"}</li>
-                        <li><span className="font-semibold">Owner:</span> {space.ownerName}</li>
-                    </ul>
+    if (loading) {
+        return (
+            <div className="min-h-[calc(100vh-64px)] bg-[#F8F8F6] flex items-center justify-center p-8">
+                <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-[#2554D7] animate-spin" />
+                    <p className="text-sm font-medium text-[#666970]">Loading parking details...</p>
                 </div>
             </div>
+        );
+    }
 
-            <div className="md:col-span-1">
-                <div className="bg-white p-6 rounded-xl shadow-xl sticky top-6 border border-gray-100">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-2">₹{space.pricePerHour} <span className="text-gray-500 text-lg font-normal">/ hour</span></h3>
-                    {space.pricePerDay && <p className="text-gray-500 mb-4">₹{space.pricePerDay} / day</p>}
+    if (fetchError || !space) {
+        return (
+            <div className="min-h-[calc(100vh-64px)] bg-[#F8F8F6] flex items-center justify-center p-6">
+                <div className="bg-white rounded-2xl border border-[#EAEAE7] p-8 max-w-md text-center shadow-xs space-y-4">
+                    <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+                        <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <h2 className="text-lg font-bold text-[#1E2024]">Unable to Load Spot</h2>
+                    <p className="text-xs text-[#666970]">{fetchError || 'This parking spot could not be found or has been removed.'}</p>
+                    <Link
+                        to="/driver-dashboard"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2554D7] text-white text-xs font-semibold hover:bg-[#1D44B8] transition-colors"
+                    >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Return to Explore Parking</span>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
 
-                    {/* v1.1: Occupancy-aware booking panel */}
-                    {occupied ? (
-                        <div className="space-y-4">
-                            <div className={`rounded-lg p-4 text-center ${
-                                space.currentOccupancyStatus === 'OVERSTAY'
-                                    ? 'bg-red-50 border border-red-200'
-                                    : 'bg-orange-50 border border-orange-200'
+    const { hours, totalPrice, isValidRange } = getBookingCalculation();
+    const occupied = isSpaceOccupied(space.currentOccupancyStatus);
+    const occupancyInfo = getOccupancyInfo(space.currentOccupancyStatus);
+    const isCovered = space.covered ?? space.isCovered;
+    const hasEv = space.evCharging ?? space.hasEvCharging;
+    const hasCoordinates = space.latitude != null && space.longitude != null && !isNaN(space.latitude) && !isNaN(space.longitude);
+    const mapPosition = hasCoordinates ? [parseFloat(space.latitude), parseFloat(space.longitude)] : [12.9716, 77.5946];
+
+    return (
+        <div className="min-h-[calc(100vh-64px)] bg-[#F8F8F6] py-6 sm:py-8 px-4 sm:px-6 lg:px-8 selection:bg-[#2554D7] selection:text-white">
+            <div className="max-w-7xl mx-auto space-y-6">
+                {/* Back Navigation Bar */}
+                <div className="flex items-center justify-between">
+                    <button
+                        onClick={() => navigate(-1)}
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-[#666970] hover:text-[#2554D7] transition-colors group cursor-pointer"
+                    >
+                        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+                        <span>Back to Search Results</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                        {occupied ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                Occupied
+                            </span>
+                        ) : space.available !== false ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                Available Now
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700 border border-gray-200">
+                                Paused
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Main Two-Column Content Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                    {/* Left Column: Photos, Details, Features, Location Map */}
+                    <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+                        {/* Hero Image Section */}
+                        <div className="relative h-64 sm:h-80 md:h-96 w-full rounded-2xl overflow-hidden border border-[#EAEAE7] bg-[#F8F8F6] shadow-xs">
+                            {space.images && space.images.length > 0 ? (
+                                <img
+                                    src={space.images[0]}
+                                    alt={space.title}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2 bg-gradient-to-b from-[#F8F8F6] to-gray-100">
+                                    <Car className="w-12 h-12 opacity-30 text-gray-400" />
+                                    <p className="text-xs font-medium text-gray-500">Verified Parking Space (No Photo Provided)</p>
+                                </div>
+                            )}
+
+                            {/* Badges on Hero */}
+                            <div className="absolute top-4 left-4 flex flex-wrap gap-2">
+                                <span className="px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-white/95 backdrop-blur-xs text-[#2554D7] shadow-xs">
+                                    {space.vehicleType || 'VEHICLE'}
+                                </span>
+                                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-black/60 backdrop-blur-xs text-white">
+                                    {space.propertyType === 'APARTMENT' ? 'Apartment Complex' : 'Independent House'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Occupancy Notice Alert if Occupied */}
+                        {occupancyInfo && (
+                            <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                                occupancyInfo.type === 'error'
+                                    ? 'bg-red-50 border-red-200 text-red-900'
+                                    : 'bg-amber-50 border-amber-200 text-amber-900'
                             }`}>
-                                <p className="font-bold text-gray-800 mb-1">
-                                    {space.currentOccupancyStatus === 'OVERSTAY'
-                                        ? '⏰ Overstay In Progress'
-                                        : '🚗 Space is Occupied'}
-                                </p>
-                                <p className="text-sm text-gray-600">
-                                    {space.currentOccupancyStatus === 'OVERSTAY'
-                                        ? 'The space will be released only after the driver completes the Closing OTP checkout.'
-                                        : 'This space is currently in use. Check back later.'}
+                                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+                                <div>
+                                    <h2 className="text-sm font-bold">{occupancyInfo.title}</h2>
+                                    <p className="text-xs mt-0.5 text-gray-700 leading-relaxed">{occupancyInfo.detail}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Space Header Info Card */}
+                        <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-4">
+                            <div>
+                                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1E2024]">
+                                    {space.title}
+                                </h1>
+                                <p className="text-sm text-[#666970] flex items-center gap-1.5 mt-2">
+                                    <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
+                                    <span>{space.address}{space.city ? `, ${space.city}` : ''} {space.zipCode || ''}</span>
                                 </p>
                             </div>
-                            {/* PRD v1.0: Booking window reminder */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-                                📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
-                            </div>
-                            <p className="text-xs text-gray-400 text-center">
-                                You can still submit a booking request — it will be queued for when the space becomes available.
-                            </p>
-                            {/* Still allow booking creation so the backend overlap guard handles it */}
-                            <form onSubmit={handleBooking} className="space-y-3 pt-2 border-t border-gray-100">
-                                {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
-                                <div>
-                                    <label className="block text-gray-700 font-medium mb-1 text-sm">Start Time</label>
-                                    <input type="datetime-local" value={startTime} min={minDateTime} max={maxDateTime}
-                                        onChange={(e) => setStartTime(e.target.value)} required
-                                        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+
+                            {/* Host & Facility Quick Pills */}
+                            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-[#EAEAE7]">
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] text-xs text-[#1E2024]">
+                                    <UserCheck className="w-3.5 h-3.5 text-[#2554D7]" />
+                                    <span>Host: <strong>{space.ownerName || 'Verified Host'}</strong></span>
                                 </div>
-                                <div>
-                                    <label className="block text-gray-700 font-medium mb-1 text-sm">End Time</label>
-                                    <input type="datetime-local" value={endTime} min={startTime || minDateTime} max={maxDateTime}
-                                        onChange={(e) => setEndTime(e.target.value)} required
-                                        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                                </div>
-                                {totalPrice > 0 && (
-                                    <div className="border-t pt-3 flex justify-between items-center font-bold">
-                                        <span className="text-sm">Total</span>
-                                        <span>₹{totalPrice.toFixed(2)}</span>
+
+                                {isCovered && (
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-100 text-xs font-semibold text-emerald-700">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Covered Space</span>
                                     </div>
                                 )}
-                                <button type="submit"
-                                    disabled={totalPrice <= 0 || user?.role === 'OWNER'}
-                                    className="w-full bg-gray-500 text-white py-3 rounded-lg font-bold hover:bg-gray-600 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                                    {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Request Anyway (Space Occupied)'}
-                                </button>
-                            </form>
+
+                                {hasEv && (
+                                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-50 border border-blue-100 text-xs font-semibold text-[#2554D7]">
+                                        <Zap className="w-3.5 h-3.5 text-[#2554D7]" />
+                                        <span>EV Charging</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    ) : (
-                        <>
-                            {/* PRD v1.0: Booking window reminder */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
-                                📅 Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.
+
+                        {/* Description Section */}
+                        <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-3">
+                            <h2 className="text-sm font-bold uppercase tracking-wider text-[#1E2024]">
+                                About this space
+                            </h2>
+                            <p className="text-sm text-[#666970] leading-relaxed whitespace-pre-line">
+                                {space.description || 'No additional description provided by the host. Contact host upon booking confirmation for gate code or entry instructions.'}
+                            </p>
+                        </div>
+
+                        {/* Features & Amenities Table */}
+                        <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-4">
+                            <h2 className="text-sm font-bold uppercase tracking-wider text-[#1E2024]">
+                                Space Amenities & Compatibility
+                            </h2>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] flex items-center justify-between">
+                                    <span className="text-[#666970]">Supported Vehicle</span>
+                                    <span className="font-bold text-[#1E2024]">{space.vehicleType || 'Any standard vehicle'}</span>
+                                </div>
+                                <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] flex items-center justify-between">
+                                    <span className="text-[#666970]">Property Category</span>
+                                    <span className="font-bold text-[#1E2024]">{space.propertyType === 'APARTMENT' ? 'Apartment' : 'Residential House'}</span>
+                                </div>
+                                <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] flex items-center justify-between">
+                                    <span className="text-[#666970]">Covered Parking</span>
+                                    <span className={`font-bold ${isCovered ? 'text-emerald-700' : 'text-gray-500'}`}>
+                                        {isCovered ? 'Yes (Weather Protected)' : 'Open / Uncovered'}
+                                    </span>
+                                </div>
+                                <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] flex items-center justify-between">
+                                    <span className="text-[#666970]">EV Charging Point</span>
+                                    <span className={`font-bold ${hasEv ? 'text-[#2554D7]' : 'text-gray-500'}`}>
+                                        {hasEv ? 'Available On-site' : 'None'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Interactive Location Map Preview */}
+                        {hasCoordinates && (
+                            <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-sm font-bold uppercase tracking-wider text-[#1E2024]">
+                                            Location Preview
+                                        </h2>
+                                        <p className="text-xs text-[#666970] mt-0.5">
+                                            {space.address}, {space.city} ({mapPosition[0].toFixed(4)}, {mapPosition[1].toFixed(4)})
+                                        </p>
+                                    </div>
+                                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                                        GPS PIN
+                                    </span>
+                                </div>
+
+                                <div className="h-64 w-full rounded-xl overflow-hidden border border-[#EAEAE7] relative z-0">
+                                    <MapContainer center={mapPosition} zoom={15} className="w-full h-full" scrollWheelZoom={false}>
+                                        <TileLayer
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                        />
+                                        <Marker position={mapPosition} icon={redMarkerIcon} />
+                                    </MapContainer>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Column: Sticky Booking Panel */}
+                    <div className="lg:col-span-5 xl:col-span-4 sticky top-20">
+                        <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-sm space-y-5">
+                            {/* Pricing Header */}
+                            <div className="pb-4 border-b border-[#EAEAE7] flex items-baseline justify-between">
+                                <div>
+                                    <span className="text-3xl font-extrabold text-[#1E2024]">
+                                        {'\u20B9'}{space.pricePerHour}
+                                    </span>
+                                    <span className="text-xs text-[#666970] font-medium"> / hour</span>
+                                </div>
+                                {space.pricePerDay && (
+                                    <div className="text-right">
+                                        <span className="text-sm font-semibold text-[#666970]">
+                                            {'\u20B9'}{space.pricePerDay}
+                                        </span>
+                                        <span className="text-[10px] text-gray-600 block">per day rate</span>
+                                    </div>
+                                )}
                             </div>
 
+                            {/* Booking Window Rule Pill */}
+                            <div className="p-3 rounded-xl bg-[#EEF2FD] border border-[#D5E0FA] text-[#2554D7] text-xs flex items-start gap-2">
+                                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>Bookings available for <strong>today</strong> and <strong>tomorrow</strong> only.</span>
+                            </div>
+
+                            {/* Success Alert */}
                             {bookingSuccess ? (
-                                <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
-                                    Booking confirmed! Redirecting...
+                                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2.5 animate-in fade-in duration-200">
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                                    <span>Reservation requested successfully! Redirecting to your bookings...</span>
                                 </div>
                             ) : (
                                 <form onSubmit={handleBooking} className="space-y-4">
-                                    {error && <div className="text-red-500 text-sm bg-red-50 p-2 rounded">{error}</div>}
-
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-1">Start Time</label>
-                                        <input
-                                            type="datetime-local"
-                                            value={startTime}
-                                            min={minDateTime}
-                                            max={maxDateTime}
-                                            onChange={(e) => setStartTime(e.target.value)}
-                                            required
-                                            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-gray-700 font-medium mb-1">End Time</label>
-                                        <input
-                                            type="datetime-local"
-                                            value={endTime}
-                                            min={startTime || minDateTime}
-                                            max={maxDateTime}
-                                            onChange={(e) => setEndTime(e.target.value)}
-                                            required
-                                            className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                    </div>
-
-                                    {totalPrice > 0 && (
-                                        <div className="border-t pt-2 flex justify-between items-center font-bold text-lg">
-                                            <span>Total Price</span>
-                                            <span className="text-blue-600">₹{totalPrice.toFixed(2)}</span>
+                                    {bookingError && (
+                                        <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                                            <span>{bookingError}</span>
                                         </div>
                                     )}
 
-                                    <button
-                                        type="submit"
-                                        disabled={totalPrice <= 0 || !space.available || user?.role === 'OWNER'}
-                                        className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {user?.role === 'OWNER' ? 'Owners Cannot Book' : 'Reserve Now'}
-                                    </button>
+                                    {/* Start Time Field */}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1.5">
+                                            Start Time <span className="text-red-500">*</span>
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="datetime-local"
+                                                required
+                                                min={minDateTime}
+                                                max={maxDateTime}
+                                                value={startTime}
+                                                onChange={(e) => setStartTime(e.target.value)}
+                                                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-xs sm:text-sm text-[#1E2024] focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* End Time Field */}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-[#1E2024] mb-1.5">
+                                            End Time <span className="text-red-500">*</span>
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type="datetime-local"
+                                                required
+                                                min={startTime || minDateTime}
+                                                max={maxDateTime}
+                                                value={endTime}
+                                                onChange={(e) => setEndTime(e.target.value)}
+                                                className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAEAE7] text-xs sm:text-sm text-[#1E2024] focus:outline-none focus:border-[#2554D7] focus:ring-1 focus:ring-[#2554D7] bg-white transition"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Transparent Pricing Breakdown */}
+                                    {isValidRange && totalPrice > 0 && (
+                                        <div className="p-4 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] space-y-2 text-xs">
+                                            <div className="flex justify-between text-[#666970]">
+                                                <span>Duration</span>
+                                                <span className="font-semibold text-[#1E2024]">{hours} hour{hours > 1 ? 's' : ''}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[#666970]">
+                                                <span>Hourly Rate</span>
+                                                <span className="font-semibold text-[#1E2024]">{'\u20B9'}{space.pricePerHour}</span>
+                                            </div>
+                                            <div className="pt-2 border-t border-[#EAEAE7] flex justify-between items-center text-sm font-bold text-[#1E2024]">
+                                                <span>Total Price</span>
+                                                <span className="text-lg text-[#2554D7]">{'\u20B9'}{totalPrice.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Primary CTA Button */}
+                                    {!user ? (
+                                        <button
+                                            type="submit"
+                                            className="w-full inline-flex items-center justify-center gap-2 bg-[#2554D7] hover:bg-[#1D44B8] text-white py-3 px-4 rounded-xl text-sm font-semibold shadow-xs hover:shadow transition-all cursor-pointer active:scale-[0.99]"
+                                        >
+                                            <span>Sign in to Reserve</span>
+                                            <ArrowRight className="w-4 h-4" />
+                                        </button>
+                                    ) : user.role === 'OWNER' ? (
+                                        <div className="p-3 rounded-xl bg-gray-100 border border-gray-200 text-center">
+                                            <p className="text-xs font-bold text-gray-700">Space Owners Cannot Book</p>
+                                            <p className="text-[11px] text-[#666970] mt-0.5">Please sign in as a driver to reserve spots.</p>
+                                        </div>
+                                    ) : occupied ? (
+                                        <button
+                                            type="submit"
+                                            disabled={true}
+                                            className="w-full inline-flex items-center justify-center gap-2 bg-gray-200 text-gray-500 py-3 px-4 rounded-xl text-sm font-bold cursor-not-allowed"
+                                        >
+                                            <span>Space Occupied</span>
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="submit"
+                                            disabled={submitting || !isValidRange || totalPrice <= 0}
+                                            className="w-full inline-flex items-center justify-center gap-2 bg-[#2554D7] hover:bg-[#1D44B8] text-white py-3 px-4 rounded-xl text-sm font-semibold shadow-xs hover:shadow transition-all disabled:opacity-50 cursor-pointer active:scale-[0.99]"
+                                        >
+                                            {submitting ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    <span>Submitting Reservation...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>Confirm & Reserve Spot</span>
+                                                    <ArrowRight className="w-4 h-4" />
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                 </form>
                             )}
-                        </>
-                    )}
+
+                            {/* Trust & Policy Guarantees */}
+                            <div className="pt-3 border-t border-[#EAEAE7] space-y-1.5 text-[11px] text-[#666970]">
+                                <div className="flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Check-in OTP generated upon payment</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Free cancellation before check-in</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
