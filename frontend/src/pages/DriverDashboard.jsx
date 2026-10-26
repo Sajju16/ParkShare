@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, useMap } from '@/components/ui/map';
 import api from '../services/api';
 import {
     Search,
@@ -25,43 +23,7 @@ import {
     List as ListIcon
 } from 'lucide-react';
 
-// â”€â”€â”€ Leaflet icon fix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// â”€â”€â”€ Custom colored markers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const greenMarker = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-});
-
-const redMarker = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-});
-
-const blueMarker = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-});
-
-// â”€â”€â”€ Haversine distance helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Haversine distance helper ───────────────────────────────────────────────
 const haversineKm = (lat1, lng1, lat2, lng2) => {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -81,18 +43,34 @@ const formatDistance = (km) => {
     return `${km.toFixed(1)} km`;
 };
 
-// â”€â”€â”€ Map re-centering component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const MapRecenter = ({ center }) => {
-    const map = useMap();
+// ─── Map camera & mobile resize controller (MapCN / MapLibre) ───────────────
+const MapController = ({ center, mobileTab }) => {
+    const { map } = useMap();
+
+    // Smooth flyTo when center coordinates change ([lat, lng] -> [lng, lat])
     useEffect(() => {
-        if (center && center[0] != null && center[1] != null) {
-            map.flyTo(center, 14, { duration: 1.2 });
-        }
+        if (!map || !center || center[0] == null || center[1] == null) return;
+        map.flyTo({
+            center: [center[1], center[0]],
+            zoom: 14,
+            duration: 1200,
+            essential: true
+        });
     }, [center, map]);
+
+    // Recalculate canvas dimensions when mobile tab transitions to map
+    useEffect(() => {
+        if (!map) return;
+        const timer = setTimeout(() => {
+            map.resize();
+        }, 100);
+        return () => clearTimeout(timer);
+    }, [mobileTab, map]);
+
     return null;
 };
 
-// â”€â”€â”€ Occupancy helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Occupancy helpers ───────────────────────────────────────────────────────
 const isOccupied = (status) =>
     status === 'CONFIRMED' || status === 'ACTIVE' || status === 'OVERSTAY';
 
@@ -110,8 +88,20 @@ const DriverDashboard = () => {
     const [selectedSpaceId, setSelectedSpaceId] = useState(null);
     const [flyCenter, setFlyCenter] = useState(null);
 
+    const mapRef = useRef(null);
+
     // Responsive mobile view tab: 'list' | 'map'
     const [mobileTab, setMobileTab] = useState('list');
+
+    // Watch mobileTab changes to resize MapLibre canvas on mobile tab switch
+    useEffect(() => {
+        if (mobileTab === 'map' && mapRef.current) {
+            const timer = setTimeout(() => {
+                mapRef.current?.resize();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [mobileTab]);
 
     // Advanced filters toggle
     const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -803,92 +793,141 @@ const DriverDashboard = () => {
                 </div>
             </div>
 
-            {/* â”€â”€ RIGHT PANEL: INTERACTIVE LEAFLET MAP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── RIGHT PANEL: INTERACTIVE MAPCN MAP ──────────────────────── */}
             <div
                 className={`flex-1 h-full relative z-0 ${
                     mobileTab === 'map' ? 'flex' : 'hidden md:flex'
                 }`}
             >
-                <MapContainer
-                    center={userLocation ? [userLocation.lat, userLocation.lng] : [12.9716, 77.5946]}
+                <Map
+                    ref={mapRef}
+                    theme="light"
+                    styles={{
+                        light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                        dark: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+                    }}
+                    center={userLocation ? [userLocation.lng, userLocation.lat] : [77.5946, 12.9716]}
                     zoom={12}
                     className="w-full h-full"
                 >
-                    <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    />
-
-                    {/* Smooth pan/flyTo controller */}
-                    {flyCenter && <MapRecenter center={flyCenter} />}
+                    <MapControls position="bottom-right" showZoom={true} />
+                    <MapController center={flyCenter} mobileTab={mobileTab} />
 
                     {/* Driver's current location marker */}
                     {userLocation && (
-                        <Marker position={[userLocation.lat, userLocation.lng]} icon={blueMarker}>
-                            <Popup>
-                                <div className="text-center p-1 space-y-1">
-                                    <div className="font-bold text-xs text-[#1E2024] flex items-center justify-center gap-1">
-                                        <Navigation className="w-3.5 h-3.5 text-[#2554D7]" />
-                                        <span>{liveTrackingActive ? 'Live Location Active' : 'You are here'}</span>
+                        <MapMarker
+                            longitude={userLocation.lng}
+                            latitude={userLocation.lat}
+                            anchor="center"
+                        >
+                            <MarkerContent>
+                                <div className="relative flex items-center justify-center">
+                                    <span className="absolute w-8 h-8 rounded-full bg-[#2554D7]/25 animate-ping" />
+                                    <div className="relative w-6 h-6 rounded-full bg-[#2554D7] border-2 border-white shadow-lg flex items-center justify-center text-white ring-4 ring-[#2554D7]/20">
+                                        <Navigation className="w-3.5 h-3.5" />
                                     </div>
-                                    <p className="text-[11px] text-[#666970] font-mono">
-                                        {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
-                                    </p>
                                 </div>
-                            </Popup>
-                        </Marker>
+                            </MarkerContent>
+                            <MarkerPopup closeButton className="p-2.5 text-center space-y-1 w-48">
+                                <div className="font-bold text-xs text-[#1E2024] flex items-center justify-center gap-1.5">
+                                    <Navigation className="w-3.5 h-3.5 text-[#2554D7]" />
+                                    <span>{liveTrackingActive ? 'Live Location Active' : 'You are here'}</span>
+                                </div>
+                                <p className="text-[11px] text-[#666970] font-mono">
+                                    {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+                                </p>
+                            </MarkerPopup>
+                        </MapMarker>
                     )}
 
                     {/* Space markers */}
-                    {spaces.map((space) =>
-                        space.latitude && space.longitude ? (
-                            <Marker
+                    {spaces.map((space) => {
+                        const hasCoords =
+                            space.latitude != null &&
+                            space.longitude != null &&
+                            !isNaN(parseFloat(space.latitude)) &&
+                            !isNaN(parseFloat(space.longitude));
+                        if (!hasCoords) return null;
+
+                        const lat = parseFloat(space.latitude);
+                        const lng = parseFloat(space.longitude);
+                        const occupied = isOccupied(space.currentOccupancyStatus);
+                        const badge = occupancyLabel(space.currentOccupancyStatus);
+                        const isSelected = selectedSpaceId === space.id;
+
+                        return (
+                            <MapMarker
                                 key={space.id}
-                                position={[space.latitude, space.longitude]}
-                                icon={isOccupied(space.currentOccupancyStatus) ? redMarker : greenMarker}
-                                eventHandlers={{
-                                    click: () => setSelectedSpaceId(space.id),
-                                }}
+                                longitude={lng}
+                                latitude={lat}
+                                anchor="bottom"
+                                onClick={() => setSelectedSpaceId(space.id)}
                             >
-                                <Popup>
-                                    <div className="p-1 max-w-[200px] space-y-2">
-                                        <div>
-                                            <h4 className="font-bold text-xs text-[#1E2024] line-clamp-1">{space.title}</h4>
-                                            <p className="text-[11px] text-[#666970] truncate">{space.city}</p>
-                                        </div>
-
-                                        <div className="flex items-center justify-between text-xs">
-                                            <span className="font-extrabold text-[#1E2024]">â‚¹{space.pricePerHour}/hr</span>
-                                            <span
-                                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                                                    occupancyLabel(space.currentOccupancyStatus).badgeCls
-                                                }`}
-                                            >
-                                                {occupancyLabel(space.currentOccupancyStatus).text}
-                                            </span>
-                                        </div>
-
-                                        {space.distanceKm != null && (
-                                            <p className="text-[11px] font-semibold text-[#2554D7]">
-                                                ðŸ“ {formatDistance(space.distanceKm)} away
-                                            </p>
-                                        )}
-
-                                        <Link
-                                            to={`/parking/${space.id}`}
-                                            className="block w-full text-center py-1 bg-[#2554D7] text-white rounded-lg text-xs font-semibold hover:bg-[#1D44B8] transition"
+                                <MarkerContent>
+                                    <div
+                                        className={`relative flex flex-col items-center cursor-pointer select-none transition-transform duration-150 ${
+                                            isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
+                                        }`}
+                                    >
+                                        <div
+                                            className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold shadow-xs whitespace-nowrap mb-0.5 border ${
+                                                occupied
+                                                    ? 'bg-red-50 text-red-700 border-red-200'
+                                                    : 'bg-white text-emerald-700 border-emerald-200'
+                                            }`}
                                         >
-                                            {isOccupied(space.currentOccupancyStatus) ? 'View Details' : 'Book Spot'}
-                                        </Link>
+                                            {`₹${space.pricePerHour}`}
+                                        </div>
+                                        <div className="relative flex items-center justify-center">
+                                            <span className="absolute -bottom-1 w-3 h-1 bg-black/25 rounded-full blur-[1px]" />
+                                            <div
+                                                className={`w-7 h-7 rounded-full border-2 border-white shadow-md flex items-center justify-center text-white ${
+                                                    occupied ? 'bg-red-600' : 'bg-emerald-600'
+                                                } ${isSelected ? 'ring-4 ring-[#2554D7]/50' : ''}`}
+                                            >
+                                                <MapPin className="w-4 h-4 fill-white" />
+                                            </div>
+                                        </div>
                                     </div>
-                                </Popup>
-                            </Marker>
-                        ) : null
-                    )}
-                </MapContainer>
+                                </MarkerContent>
+                                <MarkerPopup closeButton className="p-3 w-56 space-y-2.5">
+                                    <div>
+                                        <h4 className="font-bold text-xs text-[#1E2024] line-clamp-1">{space.title}</h4>
+                                        <p className="text-[11px] text-[#666970] truncate">{space.city}</p>
+                                    </div>
+
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="font-extrabold text-[#1E2024]">{`₹${space.pricePerHour}/hr`}</span>
+                                        <span
+                                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                badge.badgeCls
+                                            }`}
+                                        >
+                                            {badge.text}
+                                        </span>
+                                    </div>
+
+                                    {space.distanceKm != null && (
+                                        <p className="text-[11px] font-semibold text-[#2554D7] flex items-center gap-1">
+                                            <Compass className="w-3 h-3" />
+                                            <span>{formatDistance(space.distanceKm)} away</span>
+                                        </p>
+                                    )}
+
+                                    <Link
+                                        to={`/parking/${space.id}`}
+                                        className="block w-full text-center py-1.5 bg-[#2554D7] text-white rounded-xl text-xs font-semibold hover:bg-[#1D44B8] transition shadow-xs"
+                                    >
+                                        {occupied ? 'View Details' : 'Book Spot'}
+                                    </Link>
+                                </MarkerPopup>
+                            </MapMarker>
+                        );
+                    })}
+                </Map>
 
                 {/* Floating Map Legend */}
-                <div className="absolute top-4 right-4 z-400 bg-white/95 backdrop-blur-md border border-[#EAEAE7] rounded-xl px-3 py-2 shadow-sm text-xs space-y-1.5 hidden sm:block">
+                <div className="absolute top-4 right-4 z-10 bg-white/95 backdrop-blur-md border border-[#EAEAE7] rounded-xl px-3 py-2 shadow-sm text-xs space-y-1.5 hidden sm:block">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Map Legend</div>
                     <div className="flex items-center gap-3 text-[11px] text-[#1E2024] font-medium">
                         <span className="flex items-center gap-1.5">
@@ -910,7 +949,7 @@ const DriverDashboard = () => {
 
                 {/* Floating Radius Selector (When Geolocation Active) */}
                 {(nearMeActive || liveTrackingActive) && userLocation && (
-                    <div className="absolute top-4 left-4 z-400 bg-white/95 backdrop-blur-md border border-[#EAEAE7] rounded-xl px-3 py-1.5 shadow-sm text-xs flex items-center gap-2">
+                    <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md border border-[#EAEAE7] rounded-xl px-3 py-1.5 shadow-sm text-xs flex items-center gap-2">
                         <span className="font-semibold text-[#1E2024]">Radius:</span>
                         <select
                             value={radiusKm}
@@ -931,7 +970,7 @@ const DriverDashboard = () => {
                     <button
                         type="button"
                         onClick={() => setFlyCenter([userLocation.lat, userLocation.lng])}
-                        className="absolute bottom-6 right-6 z-400 w-10 h-10 rounded-xl bg-white border border-[#EAEAE7] text-[#2554D7] shadow-md hover:bg-[#EEF2FD] transition flex items-center justify-center cursor-pointer"
+                        className="absolute bottom-6 right-14 z-10 w-10 h-10 rounded-xl bg-white border border-[#EAEAE7] text-[#2554D7] shadow-md hover:bg-[#EEF2FD] transition flex items-center justify-center cursor-pointer"
                         title="Re-center map on your location"
                         aria-label="Re-center map on your location"
                     >
