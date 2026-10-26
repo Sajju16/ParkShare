@@ -19,6 +19,8 @@ import com.razorpay.Utils;
 import lombok.RequiredArgsConstructor;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
+import java.util.Arrays;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +38,7 @@ public class PaymentService {
     private final AuthService authService;
     private final NotificationService notificationService;
     private final BookingService bookingService;
+    private final Environment environment;
 
     @Value("${razorpay.key-id}")
     private String razorpayKeyId;
@@ -44,6 +47,14 @@ public class PaymentService {
     private String razorpayKeySecret;
 
     private static final double COMMISSION_RATE = 0.10; // 10% platform fee
+
+    private boolean isProductionEnvironment() {
+        if (environment == null) {
+            return false;
+        }
+        return Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> p.equalsIgnoreCase("prod") || p.equalsIgnoreCase("production"));
+    }
 
     @Transactional
     public PaymentOrderResponse createRazorpayOrder(Long bookingId) {
@@ -68,6 +79,9 @@ public class PaymentService {
         try {
             String orderId;
             if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                if (isProductionEnvironment()) {
+                    throw new IllegalStateException("Simulated payments are strictly disabled in production environment");
+                }
                 orderId = "order_mock_" + System.currentTimeMillis();
             } else {
                 RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
@@ -123,6 +137,9 @@ public class PaymentService {
         try {
             boolean isValid;
             if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                if (isProductionEnvironment()) {
+                    throw new IllegalStateException("Simulated payments are strictly disabled in production environment");
+                }
                 isValid = true;
             } else {
                 JSONObject options = new JSONObject();
@@ -192,6 +209,9 @@ public class PaymentService {
         try {
             String orderId;
             if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                if (isProductionEnvironment()) {
+                    throw new IllegalStateException("Simulated payments are strictly disabled in production environment");
+                }
                 orderId = "order_mock_overstay_" + System.currentTimeMillis();
             } else {
                 RazorpayClient razorpay = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
@@ -239,6 +259,9 @@ public class PaymentService {
         try {
             boolean isValid;
             if ("rzp_test_placeholder".equals(razorpayKeyId)) {
+                if (isProductionEnvironment()) {
+                    throw new IllegalStateException("Simulated payments are strictly disabled in production environment");
+                }
                 isValid = true;
             } else {
                 JSONObject options = new JSONObject();

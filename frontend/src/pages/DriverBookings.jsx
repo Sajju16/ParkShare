@@ -219,6 +219,8 @@ const DriverBookings = () => {
     const [selectedBookingId, setSelectedBookingId] = useState(null);
     const [isCancelling, setIsCancelling] = useState(false);
     const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+    const [mockPaymentModal, setMockPaymentModal] = useState(null);
+    const [isConfirmingMockPayment, setIsConfirmingMockPayment] = useState(false);
 
     useEffect(() => {
         fetchBookings();
@@ -273,15 +275,15 @@ const DriverBookings = () => {
 
                 // Mock Mode check for dev/test environment
                 if (keyId === 'rzp_test_placeholder') {
-                    const verifyRes = await api.post('/payments/verify', {
+                    setMockPaymentModal({
+                        type: 'BOOKING',
+                        bookingId: bookingId,
                         razorpayOrderId: razorpayOrderId,
-                        razorpayPaymentId: 'pay_mock_' + Date.now(),
-                        razorpaySignature: 'mock_signature'
+                        amount: amount,
+                        currency: currency,
+                        title: 'Parking Reservation Payment'
                     });
-                    if (verifyRes.success) {
-                        alert('Payment confirmed (Test Mode)! Your booking is now confirmed with your arrival OTP.');
-                        fetchBookings();
-                    }
+                    setIsProcessingPayment(false);
                     return;
                 }
 
@@ -342,15 +344,15 @@ const DriverBookings = () => {
 
                 // Mock Mode check for dev/test environment
                 if (keyId === 'rzp_test_placeholder') {
-                    const verifyRes = await api.post('/payments/overstay/verify', {
+                    setMockPaymentModal({
+                        type: 'OVERSTAY',
+                        bookingId: bookingId,
                         razorpayOrderId: razorpayOrderId,
-                        razorpayPaymentId: 'pay_mock_overstay_' + Date.now(),
-                        razorpaySignature: 'mock_signature'
+                        amount: amount,
+                        currency: currency,
+                        title: 'Overstay Charge Payment'
                     });
-                    if (verifyRes.success) {
-                        alert('Overstay payment confirmed! Status updated to PAID.');
-                        fetchBookings();
-                    }
+                    setIsProcessingPayment(false);
                     return;
                 }
 
@@ -398,6 +400,45 @@ const DriverBookings = () => {
         } catch (err) {
             alert(err.response?.data?.message || 'Failed to initiate overstay payment.');
         } finally {
+            setIsProcessingPayment(false);
+        }
+    };
+
+    const handleConfirmMockPayment = async () => {
+        if (!mockPaymentModal) return;
+        setIsConfirmingMockPayment(true);
+        try {
+            if (mockPaymentModal.type === 'OVERSTAY') {
+                const verifyRes = await api.post('/payments/overstay/verify', {
+                    razorpayOrderId: mockPaymentModal.razorpayOrderId,
+                    razorpayPaymentId: 'pay_mock_overstay_' + Date.now(),
+                    razorpaySignature: 'mock_signature'
+                });
+                if (verifyRes.success) {
+                    alert('TEST MODE — Simulated payment confirmed! Overstay payment status updated to PAID.');
+                    setMockPaymentModal(null);
+                    fetchBookings();
+                } else {
+                    alert(verifyRes.message || 'Overstay payment verification failed.');
+                }
+            } else {
+                const verifyRes = await api.post('/payments/verify', {
+                    razorpayOrderId: mockPaymentModal.razorpayOrderId,
+                    razorpayPaymentId: 'pay_mock_' + Date.now(),
+                    razorpaySignature: 'mock_signature'
+                });
+                if (verifyRes.success) {
+                    alert('TEST MODE — Simulated payment confirmed! Your booking is now confirmed with your arrival OTP.');
+                    setMockPaymentModal(null);
+                    fetchBookings();
+                } else {
+                    alert(verifyRes.message || 'Payment verification failed.');
+                }
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || 'Payment verification failed.');
+        } finally {
+            setIsConfirmingMockPayment(false);
             setIsProcessingPayment(false);
         }
     };
@@ -881,6 +922,80 @@ const DriverBookings = () => {
                             >
                                 {isCancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                                 <span>Yes, Cancel Booking</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Test Mode Mock Payment Confirmation Modal */}
+            {mockPaymentModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="mock-payment-title"
+                >
+                    <div className="bg-white rounded-2xl border border-[#EAEAE7] shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    Test Mode — Simulated Gateway
+                                </span>
+                                <h2 id="mock-payment-title" className="text-base font-bold text-[#1E2024] mt-1">
+                                    {mockPaymentModal.type === 'OVERSTAY' ? 'Confirm Overstay Charge Payment' : 'Confirm Reservation Payment'}
+                                </h2>
+                            </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-[#F8F8F6] border border-[#EAEAE7] space-y-1.5">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="text-[#666970]">Payment Type:</span>
+                                <span className="font-semibold text-[#1E2024]">{mockPaymentModal.title}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="text-[#666970]">Amount Due:</span>
+                                <span className="text-base font-bold text-[#2554D7]">{formatINR(mockPaymentModal.amount)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-[#666970]">
+                                <span>Simulated Order ID:</span>
+                                <span className="font-mono text-[11px] text-gray-600">{mockPaymentModal.razorpayOrderId}</span>
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl bg-blue-50/70 border border-blue-200 p-3 text-xs text-blue-900 space-y-1">
+                            <p className="font-semibold flex items-center gap-1.5 text-blue-800">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>Simulated Payment (No Real Funds Deducted)</span>
+                            </p>
+                            <p className="text-[11px] text-blue-700 leading-relaxed">
+                                Razorpay test placeholder key (<code className="font-mono text-[10px] bg-blue-100/70 px-1 py-0.5 rounded">rzp_test_placeholder</code>) is configured. This is a simulation for development and testing. Confirming will simulate a successful payment gateway response and update the status.
+                            </p>
+                        </div>
+
+                        <div className="pt-2 flex justify-end gap-3 border-t border-[#EAEAE7]">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setMockPaymentModal(null);
+                                    setIsProcessingPayment(false);
+                                }}
+                                disabled={isConfirmingMockPayment}
+                                className="px-4 py-2 rounded-xl border border-[#EAEAE7] text-xs font-semibold text-[#1E2024] hover:bg-gray-50 transition-colors cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmMockPayment}
+                                disabled={isConfirmingMockPayment}
+                                className="px-4 py-2 rounded-xl bg-[#2554D7] hover:bg-[#1D44B8] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                {isConfirmingMockPayment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                                <span>{isConfirmingMockPayment ? 'Processing...' : 'Confirm Test Payment'}</span>
                             </button>
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-﻿spring:
+spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/parkshare_db}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
@@ -21,3 +21,7 @@ app:
     secret: ${JWT_SECRET}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID}
+  key-secret: ${RAZORPAY_KEY_SECRET}
