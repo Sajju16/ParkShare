@@ -1,8 +1,6 @@
-﻿import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { Map, MapMarker, MarkerContent, MapControls } from '@/components/ui/map';
 import api from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import {
@@ -24,24 +22,6 @@ import {
     Info,
     Sparkles
 } from 'lucide-react';
-
-// Leaflet icon default fix
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Red pin for parking spot
-const redMarkerIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-});
 
 // PRD v1.0 date-window helpers: today now through tomorrow 23:59
 const getTodayMin = () => {
@@ -107,10 +87,21 @@ const ParkingSpaceDetails = () => {
     const [bookingError, setBookingError] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [bookingSuccess, setBookingSuccess] = useState(false);
+    const mapRef = useRef(null);
 
     // Allowed booking window: now through tomorrow 23:59
     const minDateTime = getTodayMin();
     const maxDateTime = getTomorrowMax();
+
+    // Ensure MapLibre recalculates canvas dimensions after component mount and space load
+    useEffect(() => {
+        if (mapRef.current) {
+            const timer = setTimeout(() => {
+                mapRef.current?.resize();
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [space?.id]);
 
     useEffect(() => {
         const fetchSpace = async () => {
@@ -245,7 +236,8 @@ const ParkingSpaceDetails = () => {
     const isCovered = space.covered ?? space.isCovered;
     const hasEv = space.evCharging ?? space.hasEvCharging;
     const hasCoordinates = space.latitude != null && space.longitude != null && !isNaN(space.latitude) && !isNaN(space.longitude);
-    const mapPosition = hasCoordinates ? [parseFloat(space.latitude), parseFloat(space.longitude)] : [12.9716, 77.5946];
+    const lat = hasCoordinates ? parseFloat(space.latitude) : 12.9716;
+    const lng = hasCoordinates ? parseFloat(space.longitude) : 77.5946;
 
     return (
         <div className="min-h-[calc(100vh-64px)] bg-[#F8F8F6] py-6 sm:py-8 px-4 sm:px-6 lg:px-8 selection:bg-[#2554D7] selection:text-white">
@@ -399,7 +391,7 @@ const ParkingSpaceDetails = () => {
                             </div>
                         </div>
 
-                        {/* Interactive Location Map Preview */}
+                        {/* Interactive Location Map Preview with MapCN */}
                         {hasCoordinates && (
                             <div className="bg-white rounded-2xl border border-[#EAEAE7] p-6 shadow-xs space-y-3">
                                 <div className="flex items-center justify-between">
@@ -408,7 +400,7 @@ const ParkingSpaceDetails = () => {
                                             Location Preview
                                         </h2>
                                         <p className="text-xs text-[#666970] mt-0.5">
-                                            {space.address}, {space.city} ({mapPosition[0].toFixed(4)}, {mapPosition[1].toFixed(4)})
+                                            {space.address}, {space.city} ({lat.toFixed(4)}, {lng.toFixed(4)})
                                         </p>
                                     </div>
                                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700">
@@ -417,13 +409,36 @@ const ParkingSpaceDetails = () => {
                                 </div>
 
                                 <div className="h-64 w-full rounded-xl overflow-hidden border border-[#EAEAE7] relative z-0">
-                                    <MapContainer center={mapPosition} zoom={15} className="w-full h-full" scrollWheelZoom={false}>
-                                        <TileLayer
-                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                        />
-                                        <Marker position={mapPosition} icon={redMarkerIcon} />
-                                    </MapContainer>
+                                    <Map
+                                        ref={mapRef}
+                                        key={space.id}
+                                        theme="light"
+                                        styles={{
+                                            light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                                            dark: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+                                        }}
+                                        center={[lng, lat]}
+                                        zoom={15}
+                                        scrollZoom={false}
+                                        className="w-full h-full"
+                                    >
+                                        <MapControls position="bottom-right" showZoom={true} />
+                                        <MapMarker
+                                            longitude={lng}
+                                            latitude={lat}
+                                            anchor="center"
+                                            draggable={false}
+                                        >
+                                            <MarkerContent>
+                                                <div className="relative flex items-center justify-center">
+                                                    <span className="absolute w-5 h-5 rounded-full bg-red-500/25 animate-ping" />
+                                                    <div className="relative w-8 h-8 rounded-full bg-red-600 border-2 border-white shadow-lg flex items-center justify-center text-white">
+                                                        <MapPin className="w-4 h-4 fill-white" />
+                                                    </div>
+                                                </div>
+                                            </MarkerContent>
+                                        </MapMarker>
+                                    </Map>
                                 </div>
                             </div>
                         )}

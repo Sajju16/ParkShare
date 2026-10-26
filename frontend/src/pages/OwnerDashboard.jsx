@@ -1,8 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import { Map, MapMarker, MarkerContent, MapControls, useMap } from '@/components/ui/map';
 import api from '../services/api';
 import {
     Plus,
@@ -23,43 +21,46 @@ import {
     CheckCircle2
 } from 'lucide-react';
 
-// Leaflet icon default fix
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Red marker for owner's space pin
-const redMarkerIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-});
-
-// Map recenter and size invalidation helper
+// Map recenter and resize helper using MapLibre / MapCN
 const MapRecenter = ({ center }) => {
-    const map = useMap();
+    const { map } = useMap();
     useEffect(() => {
-        if (center && center[0] && center[1]) {
-            map.invalidateSize();
-            map.flyTo(center, 14, { duration: 0.8 });
+        if (map && center && center[0] != null && center[1] != null) {
+            map.resize();
+            const currentZoom = map.getZoom();
+            map.flyTo({
+                center: [center[1], center[0]], // center is [lat, lng], convert to [lng, lat] for MapLibre
+                zoom: currentZoom > 14 ? currentZoom : 14,
+                duration: 600
+            });
         }
     }, [center, map]);
     return null;
 };
 
 // Map click event listener for picking location
-const MapClickListener = ({ onSelect }) => {
-    useMapEvents({
-        click(e) {
-            onSelect(e.latlng.lat, e.latlng.lng);
-        },
-    });
+const MapClickListener = ({ enabled, onSelect }) => {
+    const { map } = useMap();
+    useEffect(() => {
+        if (!map) return;
+        const canvas = map.getCanvas();
+        if (enabled && canvas) {
+            canvas.style.cursor = 'crosshair';
+        } else if (canvas) {
+            canvas.style.cursor = '';
+        }
+
+        const handleClick = (e) => {
+            if (!enabled) return;
+            // MapLibre e.lngLat provides { lng, lat }
+            onSelect(e.lngLat.lat, e.lngLat.lng);
+        };
+        map.on('click', handleClick);
+        return () => {
+            map.off('click', handleClick);
+            if (canvas) canvas.style.cursor = '';
+        };
+    }, [map, enabled, onSelect]);
     return null;
 };
 
@@ -91,6 +92,18 @@ const OwnerDashboard = () => {
     const [submitError, setSubmitError] = useState('');
     const [locLoading, setLocLoading] = useState(false);
     const [locError, setLocError] = useState('');
+    const [isPinning, setIsPinning] = useState(false);
+    const mapRef = useRef(null);
+
+    // Auto-resize MapLibre canvas whenever the add space modal opens
+    useEffect(() => {
+        if (showForm && mapRef.current) {
+            const timer = setTimeout(() => {
+                mapRef.current?.resize();
+            }, 200);
+            return () => clearTimeout(timer);
+        }
+    }, [showForm]);
 
     useEffect(() => {
         fetchSpaces();
@@ -145,6 +158,7 @@ const OwnerDashboard = () => {
                     latitude: pos.coords.latitude.toFixed(6),
                     longitude: pos.coords.longitude.toFixed(6)
                 }));
+                setIsPinning(false);
                 setLocLoading(false);
             },
             (err) => {
@@ -155,17 +169,19 @@ const OwnerDashboard = () => {
         );
     };
 
-    // Map click handler
+    // Map click handler (exits pinning mode after selecting location)
     const handleMapSelect = (lat, lng) => {
         setSpaceForm(prev => ({
             ...prev,
             latitude: lat.toFixed(6),
             longitude: lng.toFixed(6)
         }));
+        setIsPinning(false);
     };
 
     const resetFormAndClose = () => {
         setShowForm(false);
+        setIsPinning(false);
         setSpaceForm(initialFormState);
         setFile(null);
         if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -173,6 +189,7 @@ const OwnerDashboard = () => {
         setSubmitError('');
         setLocError('');
     };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -662,7 +679,7 @@ const OwnerDashboard = () => {
                                 </div>
                             </div>
 
-                            {/* Section: Location Picker (Option A GPS + Option B Leaflet Map) */}
+                            {/* Section: Location Picker */}
                             <div className="space-y-3 pt-2 border-t border-[#EAEAE7]">
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                     <div>
@@ -670,19 +687,58 @@ const OwnerDashboard = () => {
                                             Location on Map <span className="text-red-500">*</span>
                                         </h3>
                                         <p className="text-[11px] text-[#666970]">
-                                            Click on the map or use your GPS location to set the pin.
+                                            Click Pin Location to place your spot, or use your GPS coordinates.
                                         </p>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleUseCurrentLocation}
-                                        disabled={locLoading}
-                                        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF2FD] hover:bg-[#DCE5FC] text-[#2554D7] text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer self-start sm:self-auto"
-                                    >
-                                        <Crosshair className="w-3.5 h-3.5" />
-                                        <span>{locLoading ? 'Locating...' : 'Use Current GPS'}</span>
-                                    </button>
+                                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsPinning(!isPinning)}
+                                            className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                                isPinning
+                                                    ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
+                                                    : 'bg-[#2554D7] hover:bg-[#1D44B8] text-white shadow-xs'
+                                            }`}
+                                        >
+                                            {isPinning ? (
+                                                <>
+                                                    <X className="w-3.5 h-3.5" />
+                                                    <span>Cancel Pinning</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <MapPin className="w-3.5 h-3.5" />
+                                                    <span>Pin Location</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleUseCurrentLocation}
+                                            disabled={locLoading}
+                                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF2FD] hover:bg-[#DCE5FC] text-[#2554D7] text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                                        >
+                                            <Crosshair className="w-3.5 h-3.5" />
+                                            <span>{locLoading ? 'Locating...' : 'Use Current GPS'}</span>
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {isPinning && (
+                                    <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-[#2554D7] text-xs font-medium flex items-center justify-between gap-2 animate-in fade-in duration-150">
+                                        <div className="flex items-center gap-2">
+                                            <MapPin className="w-4 h-4 animate-bounce text-[#2554D7] shrink-0" />
+                                            <span>Click anywhere on the map to place your parking pin.</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsPinning(false)}
+                                            className="text-xs font-bold underline hover:no-underline cursor-pointer shrink-0"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                )}
 
                                 {locError && (
                                     <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
@@ -690,21 +746,74 @@ const OwnerDashboard = () => {
                                     </div>
                                 )}
 
-                                {/* Leaflet Map Picker Container */}
-                                <div className="h-56 w-full rounded-xl overflow-hidden border border-[#EAEAE7] relative z-0 shadow-xs">
-                                    <MapContainer center={currentMapCenter} zoom={13} className="w-full h-full">
-                                        <TileLayer
-                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                        />
-                                        <MapClickListener onSelect={handleMapSelect} />
+                                {/* Location Status Banner: Selected vs Empty */}
+                                {hasValidCoords ? (
+                                    <div className="flex items-center justify-between text-xs px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <span>
+                                                Pinned Coordinates: <strong className="font-mono">{parseFloat(spaceForm.latitude).toFixed(6)}, {parseFloat(spaceForm.longitude).toFixed(6)}</strong>
+                                            </span>
+                                        </div>
+                                        {!isPinning && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsPinning(true)}
+                                                className="text-emerald-700 hover:text-emerald-900 font-semibold underline text-[11px] cursor-pointer"
+                                            >
+                                                Reposition Pin
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 text-xs px-3.5 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+                                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                        <span>No location selected yet. Click <strong>Pin Location</strong> to click on the map, or use <strong>GPS</strong>.</span>
+                                    </div>
+                                )}
+
+                                {/* MapCN Map Picker Container with Light CARTO Style */}
+                                <div className="h-60 w-full rounded-xl overflow-hidden border border-[#EAEAE7] relative z-0 shadow-xs">
+                                    <Map
+                                        ref={mapRef}
+                                        theme="light"
+                                        styles={{
+                                            light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                                            dark: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+                                        }}
+                                        center={[currentMapCenter[1], currentMapCenter[0]]}
+                                        zoom={13}
+                                        scrollZoom={false}
+                                        className="w-full h-full"
+                                    >
+                                        <MapControls position="bottom-right" showZoom={true} />
+                                        <MapClickListener enabled={isPinning} onSelect={handleMapSelect} />
                                         {hasValidCoords && (
                                             <>
                                                 <MapRecenter center={currentMapCenter} />
-                                                <Marker position={currentMapCenter} icon={redMarkerIcon} />
+                                                <MapMarker
+                                                    longitude={parseFloat(spaceForm.longitude)}
+                                                    latitude={parseFloat(spaceForm.latitude)}
+                                                    anchor="bottom"
+                                                    draggable={false}
+                                                >
+                                                    <MarkerContent>
+                                                        <div className="flex flex-col items-center cursor-pointer select-none">
+                                                            <span className="px-2 py-0.5 rounded-md bg-[#1E2024] text-white text-[10px] font-bold shadow-md whitespace-nowrap mb-1">
+                                                                Parking Location
+                                                            </span>
+                                                            <div className="relative flex items-center justify-center">
+                                                                <span className="absolute -bottom-1 w-3 h-1 bg-black/30 rounded-full blur-[1px]" />
+                                                                <div className="w-9 h-9 rounded-full bg-red-600 border-2 border-white shadow-xl flex items-center justify-center text-white ring-4 ring-red-500/20">
+                                                                    <MapPin className="w-5 h-5 fill-white" />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </MarkerContent>
+                                                </MapMarker>
                                             </>
                                         )}
-                                    </MapContainer>
+                                    </Map>
                                 </div>
 
                                 {/* Coordinate Inputs */}
