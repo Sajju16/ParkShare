@@ -728,7 +728,13 @@ const OwnerBookings = () => {
                                                     {isConfirmed && 'Paid \u2014 awaiting driver check-in'}
                                                     {isActive && (b.checkoutInitiated ? 'Checkout initiated by driver' : 'Vehicle currently parked')}
                                                     {isOverstay && `Overstay: ${overstayMinutes} min past scheduled time`}
-                                                    {isCompleted && 'Session closed & settled'}
+                                                    {isCompleted && (() => {
+                                                        const hasUnpaidOverstay = (b.overstayExtraCharge || 0) > 0 && b.overstayPaymentStatus !== 'SUCCESS' && b.overstayPaymentStatus !== 'PAID';
+                                                        const hasRefund = (b.refundAdjustment || 0) > 0.01;
+                                                        if (hasUnpaidOverstay) return 'Session closed — Overstay payment pending';
+                                                        if (hasRefund) return 'Session closed — Refund credit pending';
+                                                        return 'Session closed & fully settled';
+                                                    })()}
                                                     {['CANCELLED', 'REJECTED', 'AUTO_REJECTED'].includes(b.status) && 'Closed / Released'}
                                                 </p>
                                             </div>
@@ -820,37 +826,61 @@ const OwnerBookings = () => {
                                         )}
 
                                         {/* 5. Completed: Financial Settlement Breakdown */}
-                                        {isCompleted && (
-                                            <div className="bg-[#F8F8F6] border border-[#EAEAE7] rounded-xl p-3.5 space-y-2 text-xs">
-                                                <div className="flex justify-between items-center text-[#666970]">
-                                                    <span>Original Booking Paid:</span>
-                                                    <span className="font-semibold text-[#1E2024]">{formatINR(b.totalPrice)}</span>
-                                                </div>
-                                                {b.actualUsageCharge != null && (
+                                        {isCompleted && (() => {
+                                            const isOverstayPaid = b.overstayPaymentStatus === 'SUCCESS' || b.overstayPaymentStatus === 'PAID';
+                                            const hasUnpaidOverstay = (b.overstayExtraCharge || 0) > 0 && !isOverstayPaid;
+                                            const hasRefund = (b.refundAdjustment || 0) > 0.01;
+
+                                            return (
+                                                <div className="bg-[#F8F8F6] border border-[#EAEAE7] rounded-xl p-3.5 space-y-2 text-xs">
                                                     <div className="flex justify-between items-center text-[#666970]">
-                                                        <span>Actual Usage Charge:</span>
-                                                        <span className="font-semibold text-[#2554D7]">{formatINR(b.actualUsageCharge)}</span>
+                                                        <span>Original Booking Paid:</span>
+                                                        <span className="font-semibold text-[#1E2024]">{formatINR(b.totalPrice)}</span>
                                                     </div>
-                                                )}
-                                                {b.refundAdjustment != null && b.refundAdjustment > 0.01 && (
-                                                    <div className="flex justify-between items-center text-blue-700 bg-blue-50/80 px-2.5 py-1 rounded-md">
-                                                        <span>Early Checkout Refund:</span>
-                                                        <span className="font-semibold">+{formatINR(b.refundAdjustment)}</span>
-                                                    </div>
-                                                )}
-                                                {b.overstayExtraCharge > 0 && (
-                                                    <div className="flex justify-between items-center text-rose-700 bg-rose-50/80 px-2.5 py-1 rounded-md">
-                                                        <span>Overstay Charge ({b.overstayPaymentStatus || 'PENDING'}):</span>
-                                                        <span className="font-semibold">+{formatINR(b.overstayExtraCharge)}</span>
-                                                    </div>
-                                                )}
-                                                {b.actualClosedAt && (
-                                                    <div className="text-[11px] text-gray-500 pt-1 border-t border-[#EAEAE7]">
-                                                        Closed at: {new Date(b.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                    {b.actualUsageCharge != null && (
+                                                        <div className="flex justify-between items-center text-[#666970]">
+                                                            <span>Actual Usage Charge:</span>
+                                                            <span className="font-semibold text-[#2554D7]">{formatINR(b.actualUsageCharge)}</span>
+                                                        </div>
+                                                    )}
+                                                    {hasRefund && (
+                                                        <div className="p-2 rounded-md bg-blue-50/80 border border-blue-100 text-blue-900 space-y-0.5">
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="font-medium">Early Checkout Credit (Ledger Credit):</span>
+                                                                <span className="font-semibold">+{formatINR(b.refundAdjustment)}</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-blue-700">
+                                                                Internal ledger credit; gateway refund not initiated.
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                    {(b.overstayExtraCharge || 0) > 0 && (
+                                                        <div className={`p-2 rounded-md border space-y-0.5 ${
+                                                            isOverstayPaid
+                                                                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                                                                : 'bg-rose-50/80 border-rose-200 text-rose-900'
+                                                        }`}>
+                                                            <div className="flex justify-between items-center">
+                                                                <span className="font-medium">
+                                                                    Overstay Surcharge {isOverstayPaid ? '(Paid)' : '(Unpaid — Awaiting Driver Payment)'}:
+                                                                </span>
+                                                                <span className="font-semibold">+{formatINR(b.overstayExtraCharge)}</span>
+                                                            </div>
+                                                            {!isOverstayPaid && (
+                                                                <p className="text-[10px] text-rose-700">
+                                                                    Awaiting driver overstay payment settlement.
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {b.actualClosedAt && (
+                                                        <div className="text-[11px] text-gray-500 pt-1 border-t border-[#EAEAE7]">
+                                                            Closed at: {new Date(b.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 );
                             })}

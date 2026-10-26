@@ -253,8 +253,8 @@ public class BookingService {
             booking.setActualClosedAt(closedAt);
 
             // ── Actual Usage Billing (v1.3) ─────────────────────────────────
-            LocalDateTime effectiveStart = booking.getActualCheckInAt() != null 
-                    ? booking.getActualCheckInAt() 
+            LocalDateTime effectiveStart = booking.getActualCheckInAt() != null
+                    ? booking.getActualCheckInAt()
                     : booking.getStartTime();
 
             // Elapsed minutes cannot be negative (e.g. check-in during grace period before scheduled start)
@@ -263,18 +263,28 @@ public class BookingService {
                 elapsedMinutes = Duration.between(effectiveStart, closedAt).toMinutes();
             }
 
-            // Minimum 1-hour billing rule (60 minutes), capped at scheduled duration if booking was < 60 min
-            long scheduledMinutes = Duration.between(booking.getStartTime(), booking.getEndTime()).toMinutes();
-            long minBillingMinutes = Math.min(60, scheduledMinutes > 0 ? scheduledMinutes : 60);
-            long billableMinutes = Math.max(minBillingMinutes, elapsedMinutes);
-
             double ratePerMinute = booking.getParkingSpace().getPricePerHour() / 60.0;
-            // Cap actualUsageCharge at original booking totalPrice (overstay extra charge is calculated separately)
-            double actualCharge = Math.min(booking.getTotalPrice(), Math.round(billableMinutes * ratePerMinute * 100.0) / 100.0);
-            booking.setActualUsageCharge(actualCharge);
+            double actualCharge;
+            double adjustment;
 
-            // refundAdjustment: positive = overpaid (pending refund owed); 0 if exact match or overstay
-            double adjustment = Math.max(0.0, Math.round((booking.getTotalPrice() - actualCharge) * 100.0) / 100.0);
+            // Sessions that reached or exceeded scheduled endTime (including OVERSTAY) consumed
+            // the full scheduled booking duration; no early-checkout refund is generated.
+            boolean isOverstay = booking.getOverstayStartedAt() != null || !closedAt.isBefore(booking.getEndTime());
+
+            if (isOverstay) {
+                actualCharge = booking.getTotalPrice();
+                adjustment = 0.0;
+            } else {
+                // Early departure before scheduled end time:
+                // Existing booking-price policy enforces a 1-hour minimum charge (60 minutes).
+                // Billable minutes cannot be less than 60 minutes, capped at original totalPrice.
+                long minBillingMinutes = 60;
+                long billableMinutes = Math.max(minBillingMinutes, elapsedMinutes);
+                actualCharge = Math.min(booking.getTotalPrice(), Math.round(billableMinutes * ratePerMinute * 100.0) / 100.0);
+                adjustment = Math.max(0.0, Math.round((booking.getTotalPrice() - actualCharge) * 100.0) / 100.0);
+            }
+
+            booking.setActualUsageCharge(actualCharge);
             booking.setRefundAdjustment(adjustment);
 
             // Calculate overstay extra charge (if the booking entered OVERSTAY state)

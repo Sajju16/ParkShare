@@ -244,4 +244,106 @@ class BookingSettlementServiceTest {
         assertEquals(100.0, payment.getSettledAmount(), 0.01);
         verify(paymentRepository).save(payment);
     }
+
+    @Test
+    void testVerifyClosingOtp_Overstay_DoesNotGenerateEarlyCheckoutRefund() {
+        // Scheduled: 30 minutes booking (10:00 - 10:30), but priced at 1-hour minimum (50.0)
+        LocalDateTime scheduledStart = LocalDateTime.now().minusMinutes(45);
+        LocalDateTime scheduledEnd = LocalDateTime.now().minusMinutes(15);
+
+        Booking booking = new Booking();
+        booking.setId(5L);
+        booking.setParkingSpace(space);
+        booking.setDriver(driver);
+        booking.setStartTime(scheduledStart);
+        booking.setEndTime(scheduledEnd);
+        booking.setTotalPrice(50.0); // 1 hour minimum policy @ 50/hr
+        booking.setStatus(BookingStatus.OVERSTAY);
+        booking.setActualCheckInAt(scheduledStart);
+        booking.setOverstayStartedAt(scheduledEnd); // Overstay for 15 minutes
+        booking.setClosingOtpCode("7788");
+        booking.setClosingOtpAttempts(0);
+
+        Payment payment = new Payment();
+        payment.setId(500L);
+        payment.setBooking(booking);
+        payment.setAmount(50.0);
+        payment.setCommission(5.0);
+        payment.setOwnerEarnings(45.0);
+        payment.setStatus("SUCCESS");
+
+        when(bookingRepository.findById(5L)).thenReturn(Optional.of(booking));
+        when(authService.getCurrentUser()).thenReturn(owner);
+        when(paymentRepository.findByBookingId(5L)).thenReturn(Optional.of(payment));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpVerificationRequest request = new OtpVerificationRequest();
+        request.setOtpCode("7788");
+
+        BookingResponse response = bookingService.verifyClosingOtp(5L, request);
+
+        assertEquals(BookingStatus.COMPLETED, response.getStatus());
+        // Crucial fix: Overstay sessions must NOT receive an early-checkout refund.
+        // Full original booking charge must be preserved.
+        assertEquals(50.0, response.getActualUsageCharge(), 0.01);
+        assertEquals(0.0, response.getRefundAdjustment(), 0.01);
+        // Overstay: 15 minutes @ 50/hr = 12.50
+        assertEquals(12.50, response.getOverstayExtraCharge(), 0.01);
+
+        // Verify Payment records
+        assertEquals(50.0, payment.getAmount(), 0.01);
+        assertEquals(50.0, payment.getSettledAmount(), 0.01);
+        assertEquals(0.0, payment.getRefundAdjustment(), 0.01);
+        assertEquals(12.50, payment.getOverstayAmount(), 0.01);
+        assertEquals("PENDING", payment.getOverstayPaymentStatus());
+        verify(paymentRepository).save(payment);
+    }
+
+    @Test
+    void testVerifyClosingOtp_EarlyCheckout_SubOneHourBooking_PreservesOneHourMinimumCharge() {
+        // Scheduled: 30 minutes booking (priced with 1-hour minimum = 50.0)
+        // Driver checks out after 10 minutes (before scheduled end time)
+        LocalDateTime scheduledStart = LocalDateTime.now().minusMinutes(10);
+        LocalDateTime scheduledEnd = scheduledStart.plusMinutes(30);
+
+        Booking booking = new Booking();
+        booking.setId(6L);
+        booking.setParkingSpace(space);
+        booking.setDriver(driver);
+        booking.setStartTime(scheduledStart);
+        booking.setEndTime(scheduledEnd);
+        booking.setTotalPrice(50.0); // 1 hour minimum policy @ 50/hr
+        booking.setStatus(BookingStatus.ACTIVE);
+        booking.setActualCheckInAt(scheduledStart);
+        booking.setClosingOtpCode("1122");
+        booking.setClosingOtpAttempts(0);
+
+        Payment payment = new Payment();
+        payment.setId(600L);
+        payment.setBooking(booking);
+        payment.setAmount(50.0);
+        payment.setCommission(5.0);
+        payment.setOwnerEarnings(45.0);
+        payment.setStatus("SUCCESS");
+
+        when(bookingRepository.findById(6L)).thenReturn(Optional.of(booking));
+        when(authService.getCurrentUser()).thenReturn(owner);
+        when(paymentRepository.findByBookingId(6L)).thenReturn(Optional.of(payment));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OtpVerificationRequest request = new OtpVerificationRequest();
+        request.setOtpCode("1122");
+
+        BookingResponse response = bookingService.verifyClosingOtp(6L, request);
+
+        assertEquals(BookingStatus.COMPLETED, response.getStatus());
+        // 10 minutes elapsed is clamped to the 1-hour minimum policy (60 min @ 50/hr = 50.0)
+        assertEquals(50.0, response.getActualUsageCharge(), 0.01);
+        assertEquals(0.0, response.getRefundAdjustment(), 0.01);
+        assertEquals(0.0, response.getOverstayExtraCharge(), 0.01);
+
+        assertEquals(50.0, payment.getSettledAmount(), 0.01);
+        assertEquals(0.0, payment.getRefundAdjustment(), 0.01);
+        verify(paymentRepository).save(payment);
+    }
 }

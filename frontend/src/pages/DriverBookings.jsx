@@ -692,49 +692,108 @@ const DriverBookings = () => {
                                     </div>
                                 )}
 
-                                {/* COMPLETED status: Settlement Breakdown */}
-                                {booking.status === 'COMPLETED' && (
-                                    <div className="p-4 rounded-xl bg-gray-50 border border-[#EAEAE7] space-y-2 text-xs">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[#666970]">Initial Booking Paid:</span>
-                                            <span className="font-semibold text-[#1E2024]">{formatINR(booking.totalPrice)}</span>
-                                        </div>
+                                {/* COMPLETED status: Session Completion & Settlement Details */}
+                                {booking.status === 'COMPLETED' && (() => {
+                                    const isOverstayPaid = booking.overstayPaymentStatus === 'SUCCESS' || booking.overstayPaymentStatus === 'PAID';
+                                    const hasUnpaidOverstay = (booking.overstayExtraCharge || 0) > 0 && !isOverstayPaid;
+                                    const hasRefundRecorded = (booking.refundAdjustment || 0) > 0.01;
+                                    const totalSessionCost = (booking.actualUsageCharge ?? booking.totalPrice) + (booking.overstayExtraCharge || 0);
 
-                                        {booking.actualUsageCharge != null && (
+                                    return (
+                                        <div className="p-4 rounded-xl bg-gray-50 border border-[#EAEAE7] space-y-2.5 text-xs">
+                                            {/* Settlement Status Banner */}
+                                            <div className="flex items-center justify-between pb-2 border-b border-[#EAEAE7]">
+                                                <span className="font-semibold text-[#1E2024]">Physical Session: Completed</span>
+                                                {hasUnpaidOverstay ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                                        <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                                        Overstay Payment Pending
+                                                    </span>
+                                                ) : hasRefundRecorded ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200">
+                                                        <Clock className="w-3 h-3 text-blue-600" />
+                                                        Refund Credit Pending
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                        Fully Settled
+                                                    </span>
+                                                )}
+                                            </div>
+
                                             <div className="flex justify-between items-center">
-                                                <span className="text-[#666970]">Actual Usage Charge:</span>
-                                                <span className="font-semibold text-[#2554D7]">{formatINR(booking.actualUsageCharge)}</span>
+                                                <span className="text-[#666970]">Initial Booking Paid:</span>
+                                                <span className="font-semibold text-[#1E2024]">{formatINR(booking.totalPrice)}</span>
                                             </div>
-                                        )}
 
-                                        {booking.refundAdjustment != null && booking.refundAdjustment > 0.01 && (
-                                            <div className="flex justify-between items-center p-2 rounded-lg bg-blue-50 border border-blue-100 text-blue-800">
-                                                <span>Refund Adjustment (Pending):</span>
-                                                <span className="font-bold">+{formatINR(booking.refundAdjustment)}</span>
+                                            {booking.actualUsageCharge != null && (
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[#666970]">Actual Usage Charge:</span>
+                                                    <span className="font-semibold text-[#2554D7]">{formatINR(booking.actualUsageCharge)}</span>
+                                                </div>
+                                            )}
+
+                                            {hasRefundRecorded && (
+                                                <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-100 text-blue-900 space-y-0.5">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="font-medium">Early Checkout Credit (Ledger Credit):</span>
+                                                        <span className="font-bold">+{formatINR(booking.refundAdjustment)}</span>
+                                                    </div>
+                                                    <p className="text-[10px] text-blue-700">
+                                                        Recorded in internal ledger; gateway refund has not been initiated.
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {(booking.overstayExtraCharge || 0) > 0 && (
+                                                <div className={`p-2 rounded-lg border space-y-0.5 ${
+                                                    isOverstayPaid
+                                                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                                                        : 'bg-rose-50/80 border-rose-200 text-rose-900'
+                                                }`}>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="font-medium">
+                                                            Overstay Surcharge {isOverstayPaid ? '(Paid)' : '(Unpaid — Payment Due)'}:
+                                                        </span>
+                                                        <span className="font-bold">+{formatINR(booking.overstayExtraCharge)}</span>
+                                                    </div>
+                                                    {!isOverstayPaid && (
+                                                        <p className="text-[10px] text-rose-700">
+                                                            Overstay payment is pending. Please complete payment below.
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Financial Accounting: Total Session Value vs Actual Cash Paid */}
+                                            <div className="pt-2 border-t border-[#EAEAE7] space-y-1">
+                                                <div className="flex justify-between items-center text-xs text-[#666970]">
+                                                    <span>Total Session Value:</span>
+                                                    <span className="font-semibold text-[#1E2024]">{formatINR(totalSessionCost)}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-sm font-bold text-[#1E2024]">
+                                                    <span>Actual Cash Paid:</span>
+                                                    <span className="text-base text-[#2554D7]">
+                                                        {formatINR(booking.totalPrice + (isOverstayPaid ? (booking.overstayExtraCharge || 0) : 0))}
+                                                    </span>
+                                                </div>
+                                                {hasUnpaidOverstay && (
+                                                    <div className="flex justify-between items-center text-xs font-semibold text-rose-700">
+                                                        <span>Balance Due (Unpaid Overstay):</span>
+                                                        <span>{formatINR(booking.overstayExtraCharge)}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
 
-                                        {booking.overstayExtraCharge > 0 && (
-                                            <div className="flex justify-between items-center text-rose-700">
-                                                <span>Overstay Surcharge:</span>
-                                                <span className="font-bold">+{formatINR(booking.overstayExtraCharge)}</span>
-                                            </div>
-                                        )}
-
-                                        <div className="pt-2 border-t border-[#EAEAE7] flex justify-between items-center text-sm font-bold text-[#1E2024]">
-                                            <span>Final Settled Amount:</span>
-                                            <span className="text-base text-[#2554D7]">
-                                                {formatINR((booking.actualUsageCharge ?? booking.totalPrice) + (booking.overstayExtraCharge || 0))}
-                                            </span>
+                                            {booking.actualClosedAt && (
+                                                <p className="text-[11px] text-gray-500 pt-1">
+                                                    Checked out: {new Date(booking.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </p>
+                                            )}
                                         </div>
-
-                                        {booking.actualClosedAt && (
-                                            <p className="text-[11px] text-gray-500 pt-1">
-                                                Checked out: {new Date(booking.actualClosedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
+                                    );
+                                })()}
 
                                 {/* Card Bottom Action Buttons */}
                                 <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-[#EAEAE7]">
