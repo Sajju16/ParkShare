@@ -81,10 +81,11 @@ const occupancyLabel = (status) => {
     return { text: 'Available', badgeCls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
 };
 
-// â”€â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Component ─────────────────────────────────────────────────────────
 const DriverDashboard = () => {
     const [spaces, setSpaces] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [brokenImages, setBrokenImages] = useState({});
     const [selectedSpaceId, setSelectedSpaceId] = useState(null);
     const [flyCenter, setFlyCenter] = useState(null);
 
@@ -154,7 +155,7 @@ const DriverDashboard = () => {
         };
     }, []);
 
-    // â”€â”€ Main Data Fetcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Main Data Fetcher ───────────────────────────────────────────────────
     const fetchSpacesData = useCallback(async () => {
         setLoading(true);
         try {
@@ -380,7 +381,7 @@ const DriverDashboard = () => {
 
     return (
         <div className="flex flex-col md:flex-row h-full w-full bg-[#F8F8F6] text-[#1E2024] overflow-hidden relative">
-            {/* â”€â”€ MOBILE VIEW TOGGLE TABS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── MOBILE VIEW TOGGLE TABS ─────────────────────────────────── */}
             <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-white border-b border-[#EAEAE7] shrink-0 z-20">
                 <div className="text-xs font-bold text-[#1E2024] flex items-center gap-1.5">
                     <Compass className="w-4 h-4 text-[#2554D7]" />
@@ -414,7 +415,7 @@ const DriverDashboard = () => {
                 </div>
             </div>
 
-            {/* â”€â”€ LEFT PANEL: SEARCH & RESULTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* ── LEFT PANEL: SEARCH & RESULTS ───────────────────────────── */}
             <div
                 className={`w-full md:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 h-full flex flex-col bg-[#F8F8F6] border-r border-[#EAEAE7] z-10 overflow-hidden ${
                     mobileTab === 'list' ? 'flex' : 'hidden md:flex'
@@ -488,7 +489,7 @@ const DriverDashboard = () => {
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-[#EAEAE7] hover:border-[#2554D7] text-[#1E2024] transition shadow-2xs disabled:opacity-50 cursor-pointer"
                                 >
                                     <Navigation className={`w-3.5 h-3.5 text-[#2554D7] ${locationLoading ? 'animate-spin' : ''}`} />
-                                    <span>{locationLoading ? 'Locatingâ€¦' : 'Near Me'}</span>
+                                    <span>{locationLoading ? 'Locating...' : 'Near Me'}</span>
                                 </button>
                             ) : (
                                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 text-[#2554D7] border border-blue-200">
@@ -567,21 +568,21 @@ const DriverDashboard = () => {
                         <div className="pt-3 border-t border-[#EAEAE7] space-y-3 text-xs animate-in fade-in duration-150">
                             {/* Price Range Filter */}
                             <div>
-                                <label className="block font-semibold text-[#1E2024] mb-1">Price per Hour (â‚¹)</label>
+                                <label className="block font-semibold text-[#1E2024] mb-1">Price per Hour ({'\u20B9'})</label>
                                 <div className="flex items-center gap-2">
                                     <input
                                         type="number"
                                         min="0"
-                                        placeholder="Min â‚¹"
+                                        placeholder="Min ₹"
                                         value={minPrice}
                                         onChange={(e) => setMinPrice(e.target.value)}
                                         className="w-1/2 p-1.5 bg-[#F8F8F6] border border-[#EAEAE7] rounded-lg text-[#1E2024] focus:outline-none focus:border-[#2554D7]"
                                     />
-                                    <span className="text-gray-400 font-bold">â€“</span>
+                                    <span className="text-gray-400 font-bold">-</span>
                                     <input
                                         type="number"
                                         min="0"
-                                        placeholder="Max â‚¹"
+                                        placeholder="Max ₹"
                                         value={maxPrice}
                                         onChange={(e) => setMaxPrice(e.target.value)}
                                         className="w-1/2 p-1.5 bg-[#F8F8F6] border border-[#EAEAE7] rounded-lg text-[#1E2024] focus:outline-none focus:border-[#2554D7]"
@@ -635,7 +636,7 @@ const DriverDashboard = () => {
                     )}
                 </div>
 
-                {/* â”€â”€ Scrollable Results List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* ── Scrollable Results List ─────────────────────────────────── */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
                     {loading ? (
                         /* Skeleton Loading Cards */
@@ -696,11 +697,12 @@ const DriverDashboard = () => {
                                 >
                                     <div>
                                         {/* Thumbnail (if available) or Compact Visual Header */}
-                                        {space.images && space.images.length > 0 ? (
+                                        {space.images && space.images.length > 0 && !brokenImages[space.id] ? (
                                             <div className="relative h-36 bg-gray-100 overflow-hidden">
                                                 <img
                                                     src={space.images[0]}
                                                     alt={space.title || 'Parking spot'}
+                                                    onError={() => setBrokenImages(prev => ({ ...prev, [space.id]: true }))}
                                                     className="w-full h-full object-cover"
                                                 />
                                                 <span
@@ -768,7 +770,7 @@ const DriverDashboard = () => {
                                     <div className="p-3.5 pt-2 border-t border-[#EAEAE7] flex items-center justify-between bg-gray-50/40">
                                         <div>
                                             <span className="text-base font-extrabold text-[#1E2024]">
-                                                â‚¹{space.pricePerHour}
+                                                {'\u20B9'}{space.pricePerHour}
                                             </span>
                                             <span className="text-xs text-[#666970]"> / hr</span>
                                         </div>

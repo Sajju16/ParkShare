@@ -1,6 +1,10 @@
 spring:
   application:
     name: ParkShare
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
   task:
     scheduling:
       pool:
@@ -8,7 +12,7 @@ spring:
 
   datasource:
     # FIX 6: Database credentials read from environment variables with safe local defaults
-    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:parkshare_db;DB_CLOSE_DELAY=-1}
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:file:./data/parkshare_db;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
     username: ${SPRING_DATASOURCE_USERNAME:sa}
     password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
@@ -33,14 +37,10 @@ app:
   jwt:
     # FIX 6: JWT secret must be provided via environment variable in production.
     # For local development, a default is provided below — DO NOT use this default in production.
-    secret: ${JWT_SECRET}
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
     expirationMs: ${JWT_EXPIRATION_MS:86400000}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
-  cloudinary:
-    cloud-name: ${CLOUDINARY_CLOUD_NAME:dummy_cloud}
-    api-key: ${CLOUDINARY_API_KEY:dummy_key}
-    api-secret: ${CLOUDINARY_API_SECRET:dummy_secret}
 
 razorpay:
   # FIX 6: Razorpay keys read from environment variables.

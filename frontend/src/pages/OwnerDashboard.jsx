@@ -18,7 +18,9 @@ import {
     ArrowRight,
     RefreshCw,
     Warehouse,
-    CheckCircle2
+    CheckCircle2,
+    Edit3,
+    Trash2
 } from 'lucide-react';
 
 // Map recenter and resize helper using MapLibre / MapCN
@@ -77,7 +79,8 @@ const initialFormState = {
     vehicleType: 'SEDAN',
     propertyType: 'HOUSE',
     isCovered: false,
-    hasEvCharging: false
+    hasEvCharging: false,
+    isAvailable: true
 };
 
 const OwnerDashboard = () => {
@@ -85,15 +88,20 @@ const OwnerDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState('');
     const [showForm, setShowForm] = useState(false);
+    const [editingSpaceId, setEditingSpaceId] = useState(null);
     const [spaceForm, setSpaceForm] = useState(initialFormState);
+    const [existingImages, setExistingImages] = useState([]);
     const [file, setFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [submitError, setSubmitError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const [locLoading, setLocLoading] = useState(false);
     const [locError, setLocError] = useState('');
+    const [brokenImages, setBrokenImages] = useState({});
     const [isPinning, setIsPinning] = useState(false);
     const mapRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     // Auto-resize MapLibre canvas whenever the add space modal opens
     useEffect(() => {
@@ -137,10 +145,28 @@ const OwnerDashboard = () => {
     const handleFileChange = (e) => {
         const selectedFile = e.target.files[0];
         if (selectedFile) {
+            if (!selectedFile.type.startsWith('image/')) {
+                setSubmitError('Please select a valid image file (PNG, JPG, or WEBP).');
+                e.target.value = '';
+                return;
+            }
+            if (selectedFile.size > 5 * 1024 * 1024) {
+                setSubmitError('Image size exceeds 5MB limit. Please choose a smaller file.');
+                e.target.value = '';
+                return;
+            }
+            setSubmitError('');
             setFile(selectedFile);
             if (previewUrl) URL.revokeObjectURL(previewUrl);
             setPreviewUrl(URL.createObjectURL(selectedFile));
         }
+    };
+
+    const handleClearNewFile = () => {
+        setFile(null);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     // Use My Current Location via browser Geolocation API
@@ -181,13 +207,47 @@ const OwnerDashboard = () => {
 
     const resetFormAndClose = () => {
         setShowForm(false);
+        setEditingSpaceId(null);
         setIsPinning(false);
         setSpaceForm(initialFormState);
+        setExistingImages([]);
+        setFile(null);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setSubmitError('');
+        setLocError('');
+    };
+
+    const handleEditSpace = (space) => {
+        setEditingSpaceId(space.id);
+        setSpaceForm({
+            title: space.title || '',
+            description: space.description || '',
+            address: space.address || '',
+            city: space.city || '',
+            zipCode: space.zipCode || '',
+            pricePerHour: space.pricePerHour != null ? String(space.pricePerHour) : '',
+            pricePerDay: space.pricePerDay != null ? String(space.pricePerDay) : '',
+            latitude: space.latitude != null ? String(space.latitude) : '',
+            longitude: space.longitude != null ? String(space.longitude) : '',
+            vehicleType: space.vehicleType || 'SEDAN',
+            propertyType: space.propertyType || 'HOUSE',
+            isCovered: space.covered ?? space.isCovered ?? false,
+            hasEvCharging: space.evCharging ?? space.hasEvCharging ?? false,
+            isAvailable: space.available !== false
+        });
+        setExistingImages(space.images && Array.isArray(space.images) ? [...space.images] : []);
         setFile(null);
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         setPreviewUrl(null);
         setSubmitError('');
         setLocError('');
+        setShowForm(true);
+    };
+
+    const handleRemoveExistingImage = (indexToRemove) => {
+        setExistingImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
     };
 
 
@@ -207,7 +267,7 @@ const OwnerDashboard = () => {
             return;
         }
 
-        let images = [];
+        let images = [...existingImages];
 
         if (file) {
             setUploading(true);
@@ -217,12 +277,19 @@ const OwnerDashboard = () => {
                 const uploadRes = await api.post('/parking/upload-image', uploadForm, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
-                if (uploadRes.success) images.push(uploadRes.data);
+                if (uploadRes && uploadRes.success && uploadRes.data) {
+                    images.push(uploadRes.data);
+                } else {
+                    setSubmitError(uploadRes?.message || 'Image upload failed. Please try again.');
+                    setUploading(false);
+                    return;
+                }
             } catch (err) {
                 console.error('Upload failed', err);
-                setSubmitError('Image upload failed. Space will be saved without the image.');
-            } finally {
+                const errMsg = err.response?.data?.message || err.message || 'Image upload failed. Please try again.';
+                setSubmitError(errMsg);
                 setUploading(false);
+                return;
             }
         }
 
@@ -232,15 +299,22 @@ const OwnerDashboard = () => {
             pricePerDay: spaceForm.pricePerDay ? parseFloat(spaceForm.pricePerDay) : null,
             latitude: latNum,
             longitude: lngNum,
+            isAvailable: spaceForm.isAvailable,
             images
         };
 
         try {
             setUploading(true);
-            const res = await api.post('/parking', payload);
+            const res = editingSpaceId
+                ? await api.put(`/parking/${editingSpaceId}`, payload)
+                : await api.post('/parking', payload);
+
             if (res.success) {
+                const isEdit = !!editingSpaceId;
                 resetFormAndClose();
                 fetchSpaces();
+                setSuccessMessage(isEdit ? 'Parking space updated successfully!' : 'Parking space listed successfully!');
+                setTimeout(() => setSuccessMessage(''), 4000);
             } else {
                 setSubmitError(res.message || 'Failed to save parking space.');
             }
@@ -258,6 +332,21 @@ const OwnerDashboard = () => {
 
     return (
         <div className="w-full space-y-6">
+            {successMessage && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{successMessage}</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setSuccessMessage('')}
+                        className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
             {/* Header Section */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
                 <div>
@@ -373,7 +462,7 @@ const OwnerDashboard = () => {
                 /* Populated State (Active Parking Spaces Grid) */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {spaces.map((space) => {
-                        const hasImage = space.images && space.images.length > 0;
+                        const hasImage = space.images && space.images.length > 0 && !brokenImages[space.id];
                         const isCovered = space.covered ?? space.isCovered;
                         const hasEv = space.evCharging ?? space.hasEvCharging;
                         const isAvailable = space.available !== false;
@@ -389,6 +478,7 @@ const OwnerDashboard = () => {
                                         <img
                                             src={space.images[0]}
                                             alt={space.title}
+                                            onError={() => setBrokenImages(prev => ({ ...prev, [space.id]: true }))}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                         />
                                     ) : (
@@ -468,13 +558,24 @@ const OwnerDashboard = () => {
                                             )}
                                         </div>
 
-                                        <Link
-                                            to={`/parking/${space.id}`}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8F8F6] hover:bg-[#EEF2FD] text-[#1E2024] hover:text-[#2554D7] text-xs font-semibold border border-[#EAEAE7] transition-colors"
-                                        >
-                                            <span>View</span>
-                                            <ArrowRight className="w-3.5 h-3.5" />
-                                        </Link>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleEditSpace(space)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF2FD] hover:bg-[#DCE5FC] text-[#2554D7] text-xs font-semibold border border-[#DCE5FC] transition-colors cursor-pointer"
+                                                title="Edit Space"
+                                            >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                                <span>Edit</span>
+                                            </button>
+                                            <Link
+                                                to={`/parking/${space.id}`}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F8F8F6] hover:bg-[#EEF2FD] text-[#1E2024] hover:text-[#2554D7] text-xs font-semibold border border-[#EAEAE7] transition-colors"
+                                            >
+                                                <span>View</span>
+                                                <ArrowRight className="w-3.5 h-3.5" />
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -494,8 +595,14 @@ const OwnerDashboard = () => {
                         {/* Modal Header */}
                         <div className="px-6 py-4 border-b border-[#EAEAE7] flex items-center justify-between bg-white sticky top-0 z-20">
                             <div>
-                                <h2 className="text-lg font-bold text-[#1E2024]">Add New Parking Space</h2>
-                                <p className="text-xs text-[#666970]">Enter space details and pin location on the map.</p>
+                                <h2 className="text-lg font-bold text-[#1E2024]">
+                                    {editingSpaceId ? 'Edit Parking Space' : 'Add New Parking Space'}
+                                </h2>
+                                <p className="text-xs text-[#666970]">
+                                    {editingSpaceId
+                                        ? 'Update space details, pricing, availability, and location.'
+                                        : 'Enter space details and pin location on the map.'}
+                                </p>
                             </div>
                             <button
                                 type="button"
@@ -676,6 +783,15 @@ const OwnerDashboard = () => {
                                         />
                                         <span>EV Charging Available</span>
                                     </label>
+                                    <label className="flex items-center gap-2.5 text-sm text-[#1E2024] cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={spaceForm.isAvailable}
+                                            onChange={(e) => setSpaceForm({ ...spaceForm, isAvailable: e.target.checked })}
+                                            className="w-4 h-4 rounded text-[#2554D7] border-gray-300 focus:ring-[#2554D7]"
+                                        />
+                                        <span className="font-medium text-emerald-800">Available for Drivers to Book</span>
+                                    </label>
                                 </div>
                             </div>
 
@@ -852,12 +968,56 @@ const OwnerDashboard = () => {
                             {/* Section: Photo Upload */}
                             <div className="space-y-3 pt-2 border-t border-[#EAEAE7]">
                                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                                    Space Photo (Optional)
+                                    Space Photos (Optional)
                                 </h3>
+
+                                {existingImages.length > 0 && (
+                                    <div className="space-y-1.5">
+                                        <span className="text-[11px] font-semibold text-gray-500">Current Photos (click trash to remove):</span>
+                                        <div className="flex flex-wrap gap-2.5">
+                                            {existingImages.map((imgUrl, idx) => (
+                                                <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-[#EAEAE7] bg-[#F8F8F6] group">
+                                                    <img
+                                                        src={imgUrl}
+                                                        alt={`Space ${idx + 1}`}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = 'none';
+                                                            if (e.currentTarget.nextSibling) {
+                                                                e.currentTarget.nextSibling.style.display = 'flex';
+                                                            }
+                                                        }}
+                                                    />
+                                                    <div style={{ display: 'none' }} className="w-full h-full flex-col items-center justify-center text-gray-400 gap-1 text-[9px] p-1 text-center">
+                                                        <Car className="w-5 h-5 opacity-40" />
+                                                        <span className="leading-tight">Broken link</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveExistingImage(idx)}
+                                                        className="absolute top-1 right-1 p-1 rounded-md bg-black/60 text-white hover:bg-red-600 transition cursor-pointer z-10"
+                                                        title="Remove Photo"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex items-center gap-4">
                                     {previewUrl ? (
-                                        <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-[#EAEAE7] shrink-0">
+                                        <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-[#EAEAE7] shrink-0 group">
                                             <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                                            <button
+                                                type="button"
+                                                onClick={handleClearNewFile}
+                                                className="absolute top-1 right-1 p-1 rounded-md bg-black/60 text-white hover:bg-red-600 transition cursor-pointer"
+                                                title="Cancel selected image"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
                                         </div>
                                     ) : (
                                         <div className="w-20 h-20 rounded-xl bg-[#F8F8F6] border border-dashed border-[#EAEAE7] flex items-center justify-center text-gray-400 shrink-0">
@@ -866,6 +1026,7 @@ const OwnerDashboard = () => {
                                     )}
                                     <div className="flex-1">
                                         <input
+                                            ref={fileInputRef}
                                             type="file"
                                             accept="image/*"
                                             onChange={handleFileChange}
@@ -893,12 +1054,12 @@ const OwnerDashboard = () => {
                                     {uploading ? (
                                         <>
                                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Saving Space...</span>
+                                            <span>{editingSpaceId ? 'Updating Space...' : 'Saving Space...'}</span>
                                         </>
                                     ) : (
                                         <>
                                             <CheckCircle2 className="w-3.5 h-3.5" />
-                                            <span>Save Parking Space</span>
+                                            <span>{editingSpaceId ? 'Save Changes' : 'Save Parking Space'}</span>
                                         </>
                                     )}
                                 </button>

@@ -32,3 +32,8 @@ logs/
 
 # Spring Boot
 HELP.md
+
+# Local Database
+data/
+*.db
+*.mv.db
