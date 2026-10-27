@@ -25,6 +25,7 @@ public class ParkingSpaceService {
     private final ParkingSpaceRepository parkingSpaceRepository;
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
+    private final ImageStorageService imageStorageService;
 
     private User getAuthenticatedUser() {
         String email = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -69,6 +70,7 @@ public class ParkingSpaceService {
         mapRequestToEntity(request, space);
         
         ParkingSpace saved = parkingSpaceRepository.save(space);
+        imageStorageService.syncSpaceImages(saved, request.getImages());
         return mapToResponse(saved);
     }
 
@@ -81,7 +83,9 @@ public class ParkingSpaceService {
         }
         
         mapRequestToEntity(request, space);
-        return mapToResponse(parkingSpaceRepository.save(space));
+        ParkingSpace saved = parkingSpaceRepository.save(space);
+        imageStorageService.syncSpaceImages(saved, request.getImages());
+        return mapToResponse(saved);
     }
 
     public List<ParkingSpaceResponse> getMyParkingSpaces() {
@@ -221,6 +225,9 @@ public class ParkingSpaceService {
         space.setPropertyType(request.getPropertyType());
         space.setCovered(request.isCovered());
         space.setHasEvCharging(request.isHasEvCharging());
+        if (request.getIsAvailable() != null) {
+            space.setAvailable(request.getIsAvailable());
+        }
         if (request.getImages() != null) {
             space.setImages(request.getImages());
         }
@@ -256,7 +263,9 @@ public class ParkingSpaceService {
                 .covered(space.isCovered())
                 .evCharging(space.isHasEvCharging())
                 .available(space.isAvailable())
-                .images(space.getImages())
+                .images(space.getImages() != null
+                        ? space.getImages().stream().map(imageStorageService::resolveFullImageUrl).collect(Collectors.toList())
+                        : java.util.Collections.emptyList())
                 // v1.1: Live occupancy status (null = free, "CONFIRMED"/"ACTIVE"/"OVERSTAY" = occupied)
                 .currentOccupancyStatus(currentOccupancyStatus)
                 // distanceKm left null here; set by getNearbySpaces() when driver location is known

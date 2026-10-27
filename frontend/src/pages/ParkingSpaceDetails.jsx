@@ -80,6 +80,7 @@ const ParkingSpaceDetails = () => {
     const { user } = useContext(AuthContext);
 
     const [space, setSpace] = useState(null);
+    const [imgError, setImgError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState('');
     const [startTime, setStartTime] = useState('');
@@ -277,10 +278,11 @@ const ParkingSpaceDetails = () => {
                     <div className="lg:col-span-7 xl:col-span-8 space-y-6">
                         {/* Hero Image Section */}
                         <div className="relative h-64 sm:h-80 md:h-96 w-full rounded-2xl overflow-hidden border border-[#EAEAE7] bg-[#F8F8F6] shadow-xs">
-                            {space.images && space.images.length > 0 ? (
+                            {space.images && space.images.length > 0 && !imgError ? (
                                 <img
                                     src={space.images[0]}
                                     alt={space.title}
+                                    onError={() => setImgError(true)}
                                     className="w-full h-full object-cover"
                                 />
                             ) : (

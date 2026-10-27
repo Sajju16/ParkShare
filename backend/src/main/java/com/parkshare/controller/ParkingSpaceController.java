@@ -3,10 +3,14 @@ package com.parkshare.controller;
 import com.parkshare.dto.ApiResponse;
 import com.parkshare.dto.ParkingSpaceRequest;
 import com.parkshare.dto.ParkingSpaceResponse;
-import com.parkshare.service.CloudinaryService;
+import com.parkshare.entity.ParkingSpaceImage;
+import com.parkshare.service.ImageStorageService;
 import com.parkshare.service.ParkingSpaceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 @RequestMapping("/api/v1/parking")
@@ -21,7 +26,7 @@ import java.util.List;
 public class ParkingSpaceController {
 
     private final ParkingSpaceService parkingSpaceService;
-    private final CloudinaryService cloudinaryService;
+    private final ImageStorageService imageStorageService;
 
     @PostMapping
     @PreAuthorize("hasRole('OWNER')")
@@ -91,10 +96,39 @@ public class ParkingSpaceController {
     @PreAuthorize("hasRole('OWNER')")
     public ResponseEntity<ApiResponse<String>> uploadImage(@RequestParam("file") MultipartFile file) {
         try {
-            String url = cloudinaryService.uploadImage(file);
+            String url = imageStorageService.storeImage(file);
             return ResponseEntity.ok(ApiResponse.success("Image uploaded", url));
-        } catch (IOException e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Failed to upload image", "UPLOAD_ERROR"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage(), "VALIDATION_ERROR"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("Failed to upload image: " + e.getMessage(), "UPLOAD_ERROR"));
         }
+    }
+
+    /**
+     * Public endpoint to serve database-stored parking space photos with HTTP caching.
+     */
+    @GetMapping("/public/images/{id}")
+    public ResponseEntity<byte[]> getImage(@PathVariable Long id) {
+        ParkingSpaceImage image = imageStorageService.getImage(id).orElse(null);
+        if (image == null || image.getData() == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(image.getContentType());
+        } catch (Exception e) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+
+        String filename = image.getOriginalFilename() != null ? image.getOriginalFilename() : "parking-photo.jpg";
+
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .contentLength(image.getData().length)
+                .cacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic().immutable())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                .body(image.getData());
     }
 }

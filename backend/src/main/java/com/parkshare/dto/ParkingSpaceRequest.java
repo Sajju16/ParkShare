@@ -40,6 +40,7 @@ public class ParkingSpaceRequest {
 
     private boolean isCovered;
     private boolean hasEvCharging;
+    private Boolean isAvailable;
 
     private List<String> images;
 }
